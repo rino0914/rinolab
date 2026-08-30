@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rinolab</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #111827;
+            color: #f9fafb;
+            font-family: -apple-system, BlinkMacSystemFont,
+                         "Segoe UI", sans-serif;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+            font-size: 2.5rem;
+        }
+
+        .subtitle {
+            color: #9ca3af;
+            margin-bottom: 32px;
+        }
+
+        .services {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            display: block;
+            padding: 24px;
+            border-radius: 16px;
+            background: #1f2937;
+            color: #f9fafb;
+            text-decoration: none;
+            transition: transform 0.15s ease,
+                        background 0.15s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            background: #374151;
+        }
+
+        .card h2 {
+            margin: 0 0 8px 0;
+        }
+
+        .card p {
+            margin: 0;
+            color: #9ca3af;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Rinolab</h1>
+    <div class="subtitle">Home Server</div>
+
+    <div class="services">
+
+        <a class="card" href="https://drive.rinolab.org">
+            <h2>Drive</h2>
+            <p>파일 관리</p>
+        </a>
+
+        <a class="card" href="https://photo.rinolab.org">
+            <h2>Photo</h2>
+            <p>사진 및 영상 관리</p>
+        </a>
+
+        <a class="card" href="https://console.rinolab.org">
+            <h2>Console</h2>
+            <p>서버 관리</p>
+        </a>
+
+    </div>
+
+</div>
+
+</body>
+</html>

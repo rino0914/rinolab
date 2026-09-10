@@ -1,0 +1,20 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    container_name: rinus-mongodb
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:27017:27017"
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: rinolab_dev
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+
+    volumes:
+      - mongodb-data:/data/db
+
+volumes:
+  mongodb-data:

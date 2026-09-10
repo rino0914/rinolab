@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="RinoLab 포털 로그인">
+    <meta name="theme-color" content="#f7f7f5">
+    <title>로그인 — RinoLab</title>
+    <link rel="stylesheet" href="../src/css/auth.css">
+    <script type="module" src="../src/js/auth.js" defer></script>
+</head>
+<body>
+    <div class="auth-page">
+        <header class="auth-header">
+            <a class="brand" href="./dashboard.html" aria-label="RinoLab 홈">
+                <span class="brand-mark" aria-hidden="true">R</span>
+                <span>RinoLab</span>
+            </a>
+            <a class="header-link" href="./signup.html">회원가입</a>
+        </header>
+
+        <main class="auth-main">
+            <section class="auth-container" aria-labelledby="login-title">
+                <header class="auth-intro">
+                    <p class="eyebrow">Private Cloud</p>
+                    <h1 id="login-title">로그인</h1>
+                    <p>RinoLab 포털에 접속하려면 계정 정보를 입력하세요.</p>
+                </header>
+
+                <div class="auth-card">
+                    <form class="auth-form" data-auth-form novalidate>
+                        <div class="field">
+                            <label class="field-label" for="login-email">이메일</label>
+                            <input id="login-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="name@example.com" required autofocus>
+                        </div>
+
+                        <div class="field">
+                            <label class="field-label" for="login-password">비밀번호</label>
+                            <div class="input-wrap">
+                                <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" required>
+                                <button class="password-toggle" type="button" data-toggle-password="login-password" aria-pressed="false">표시</button>
+                            </div>
+                        </div>
+
+                        <div class="form-options">
+                            <label class="checkbox-label"><input name="remember" type="checkbox">로그인 상태 유지</label>
+                        </div>
+
+                        <button class="submit-button" type="submit">로그인</button>
+                        <p class="form-status" data-form-status role="status" tabindex="-1" hidden>입력값을 확인했습니다. 실제 로그인은 백엔드 연결 후 동작합니다.</p>
+                    </form>
+                </div>
+
+                <p class="auth-switch">계정이 없나요? <a class="text-link" href="./signup.html">회원가입</a></p>
+                <p class="backend-note">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                    현재 화면은 프런트엔드 UI이며 입력한 정보는 저장되거나 전송되지 않습니다.
+                </p>
+            </section>
+        </main>
+
+        <footer class="auth-footer"><p>&copy; 2026 RinoLab</p><p>Personal NAS / Private Cloud</p></footer>
+    </div>
+</body>
+</html>

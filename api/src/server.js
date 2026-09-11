@@ -3,8 +3,13 @@ import express from "express";
 import session from "express-session";
 import MongoStore from "connect-mongo";
 import helmet from "helmet";
+import { fileURLToPath } from "node:url";
 import { connectDB } from "./db.js";
 import authRouter from "./routes/auth.js";
+import { initializeOidcStorage } from "./oidc/adapter.js";
+import { loadOidcConfig } from "./oidc/config.js";
+import { createOidcInteractionRouter } from "./oidc/interactions.js";
+import { createOidcProvider } from "./oidc/provider.js";
 
 const app = express();
 const port = process.env.PORT ?? 3000;
@@ -48,6 +53,20 @@ app.get("/api/health", (request, response) => {
 
 async function startServer() {
     await connectDB();
+
+    if (!isProduction) {
+        const webRoot = fileURLToPath(new URL("../../web", import.meta.url));
+        app.use(express.static(webRoot));
+    }
+
+    const oidcConfig = loadOidcConfig();
+    if (oidcConfig) {
+        await initializeOidcStorage();
+        const oidcProvider = createOidcProvider(oidcConfig);
+        app.use(createOidcInteractionRouter(oidcProvider, oidcConfig));
+        app.use(oidcProvider.callback());
+        console.log(`OIDC Provider enabled: ${oidcConfig.issuer}`);
+    }
 
     app.listen(port, () => {
         console.log(`Node server started on port ${port}.`);

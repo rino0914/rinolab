@@ -1,11 +1,19 @@
 http://rinolab.org {
     handle /api/* {
-        reverse_proxy 127.0.0.1:3000
+        reverse_proxy 127.0.0.1:3000 {
+            header_up X-Forwarded-Proto https
+        }
     }
 
     handle {
         root * /var/www/rinolab
         file_server
+    }
+}
+
+http://auth.rinolab.org {
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Forwarded-Proto https
     }
 }
 

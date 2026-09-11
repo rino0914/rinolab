@@ -45,6 +45,7 @@ FTP/FTPS처럼 Cloudflare Tunnel이 지원하지 않는 프로토콜은 이 문�
 | --- | --- | ---: |
 | `rinolab.org` | Rinolab 정적 웹 | Caddy에서 파일 제공 |
 | `rinolab.org/api/*` | Rinolab Node API | `3000` |
+| `auth.rinolab.org` | Rinolab OIDC Provider | `3000` |
 | `drive.rinolab.org` | FileBrowser | `8080` |
 | `photo.rinolab.org` | Immich | `2283` |
 | `console.rinolab.org` | Cockpit | `9090` |
@@ -59,10 +60,17 @@ Tunnel이 Cockpit에 직접 연결되는 경우에는 Caddy 라우팅이 필요�
 1. `rinolab.org/api/*`를 Node API의 `127.0.0.1:3000`으로 전달한다.
 2. 그 밖의 `rinolab.org` 요청에는 `/var/www/rinolab`의 정적 파일을 제공한다.
 3. Drive와 Photo 호스트를 각각의 내부 서비스로 전달한다.
+4. Auth 호스트의 전체 요청을 Node API의 OIDC Provider로 전달한다.
 
 Caddy 사이트 주소에는 `http://`를 명시한다. 이는 Caddy의 자동 HTTPS 및 HTTP에서
 HTTPS로의 리다이렉트를 사용하지 않고 Tunnel 내부에서 HTTP origin으로 동작하게 하기
 위함이다.
+
+Cloudflare Edge에서 사용자 HTTPS가 종료되고 Tunnel 내부 구간은 HTTP이므로 Rinolab API와
+OIDC reverse proxy는 upstream에 `X-Forwarded-Proto: https`를 명시한다. Express와
+`oidc-provider`는 이 값을 바탕으로 production secure cookie를 발급한다. Caddy를 Tunnel
+외의 일반 HTTP 진입점으로도 사용하게 된다면 이 고정 header 대신 trusted proxy 구성을
+다시 검토해야 한다.
 
 ```text
 Cloudflare Edge

@@ -1,13 +1,13 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import { rateLimit } from "express-rate-limit";
-import { ObjectId } from "mongodb";
 import { getDB } from "../db.js";
+import { authenticateAccount, findActiveAccountById } from "../accounts.js";
+import { destroySession, regenerateSession, saveSession } from "../session.js";
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const persistentSessionAge = 30 * 24 * 60 * 60 * 1000;
-const dummyPasswordHash = "$2b$12$r1mcHe0tgqmwGwFBlSvI5OGrGWqngacnLCVfjjKJEsdfTqNySPhEW";
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 10,
@@ -21,33 +21,6 @@ router.use((request, response, next) => {
     response.set("Cache-Control", "no-store");
     next();
 });
-
-function regenerateSession(request) {
-    return new Promise((resolve, reject) => {
-        request.session.regenerate((error) => {
-            if (error) reject(error);
-            else resolve();
-        });
-    });
-}
-
-function saveSession(request) {
-    return new Promise((resolve, reject) => {
-        request.session.save((error) => {
-            if (error) reject(error);
-            else resolve();
-        });
-    });
-}
-
-function destroySession(request) {
-    return new Promise((resolve, reject) => {
-        request.session.destroy((error) => {
-            if (error) reject(error);
-            else resolve();
-        });
-    });
-}
 
 router.post("/signup", async (request, response) => {
     try {
@@ -144,16 +117,9 @@ router.post("/login", loginLimiter, async (request, response) => {
             });
         }
 
-        const database = getDB();
-        const account = await database.collection("accounts").findOne({
-            email: normalizedEmail
-        });
-        const passwordMatches = await bcrypt.compare(
-            password,
-            account?.passwordHash ?? dummyPasswordHash
-        );
+        const account = await authenticateAccount(normalizedEmail, password);
 
-        if (!account || !passwordMatches) {
+        if (!account) {
             return response.status(401).json({
                 message: "이메일 또는 비밀번호가 올바르지 않습니다."
             });
@@ -190,17 +156,13 @@ router.post("/login", loginLimiter, async (request, response) => {
 router.get("/me", async (request, response) => {
     try {
         const { accountId } = request.session;
-        if (!accountId || !ObjectId.isValid(accountId)) {
+        if (!accountId) {
             return response.status(401).json({
                 message: "로그인이 필요합니다."
             });
         }
 
-        const database = getDB();
-        const account = await database.collection("accounts").findOne(
-            { _id: new ObjectId(accountId), status: "ACTIVE" },
-            { projection: { passwordHash: 0 } }
-        );
+        const account = await findActiveAccountById(accountId);
 
         if (!account) {
             await destroySession(request);

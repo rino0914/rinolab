@@ -3,6 +3,14 @@ import { requestAPI } from "./api.js";
 const forms = document.querySelectorAll("[data-auth-form]");
 const passwordToggles = document.querySelectorAll("[data-toggle-password]");
 
+function safeLoginReturnUrl() {
+    const value = new URLSearchParams(window.location.search).get("returnTo");
+    if (!value?.startsWith("/")) return undefined;
+
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin ? url.href : undefined;
+}
+
 passwordToggles.forEach((toggle) => {
     toggle.addEventListener("click", () => {
         const input = document.getElementById(toggle.dataset.togglePassword);
@@ -70,7 +78,7 @@ forms.forEach((form) => {
                 password: formData.get("password"),
                 remember: formData.get("remember") === "on"
             };
-            redirectUrl = "./dashboard.html";
+            redirectUrl = safeLoginReturnUrl() ?? "./dashboard.html";
             action = "로그인";
             pendingText = "로그인 중...";
         } else {

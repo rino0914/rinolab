@@ -1,0 +1,18 @@
+http://rinolab.org {
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    handle {
+        root * /var/www/rinolab
+        file_server
+    }
+}
+
+http://drive.rinolab.org {
+    reverse_proxy 127.0.0.1:8080
+}
+
+http://photo.rinolab.org {
+    reverse_proxy 127.0.0.1:2283
+}

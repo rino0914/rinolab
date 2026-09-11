@@ -8,6 +8,7 @@
     <title>RinoLab — Private Cloud</title>
 
     <link rel="stylesheet" href="../src/css/dashboard.css">
+    <script type="module" src="../src/js/dashboard.js" defer></script>
 </head>
 
 <body>
@@ -50,8 +51,8 @@
                 <span class="mobile-brand"><span class="brand-mark" aria-hidden="true">R</span>RinoLab</span>
                 <p class="page-name">Overview</p>
                 <div class="auth-actions">
-                    <a class="button" href="./login.html">로그인</a>
-                    <a class="button primary" href="./signup.html">회원가입</a>
+                    <span data-account-name role="status">사용자 확인 중...</span>
+                    <button class="button" type="button" data-logout disabled>로그아웃</button>
                 </div>
             </header>
 

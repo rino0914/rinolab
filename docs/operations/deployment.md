@@ -177,7 +177,7 @@ origin/main fetch와 checkout
 → API와 web release 전환
 → rinolab-api restart
 → 최대 10회, 1초 간격 health check
-→ 실패 시 직전 API와 web rollback
+→ 실패 시 직전 환경 설정, API, web rollback
 → Caddyfile 설치 및 reload
 ```
 

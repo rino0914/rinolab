@@ -22,6 +22,7 @@ readonly WEB_ROOT="/var/www/rinolab"
 readonly WEB_PREVIOUS="/var/www/rinolab.previous"
 
 readonly ENV_FILE="/etc/rinolab/api.env"
+readonly ENV_PREVIOUS="/etc/rinolab/api.env.previous"
 readonly JWKS_FILE="/etc/rinolab/oidc-jwks.json"
 readonly SOURCE_ENV="$SOURCE_API/.env.prd"
 readonly LEGACY_JWKS_FILE="/opt/rinolab/secrets/oidc-jwks.json"
@@ -32,6 +33,7 @@ readonly HEALTH_URL="http://127.0.0.1:3000/api/health"
 API_STAGE=""
 WEB_STAGE=""
 ENV_STAGE=""
+ENV_ACTIVATED=false
 DEPLOY_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 
 fail() {
@@ -138,6 +140,10 @@ rollback_release() {
 
     echo "API health check failed; rolling back the deployed files" >&2
     sudo systemctl stop rinolab-api || true
+
+    if [ "$ENV_ACTIVATED" = true ] && sudo test -f "$ENV_PREVIOUS"; then
+        sudo cp -p "$ENV_PREVIOUS" "$ENV_FILE"
+    fi
 
     if [ -e "$API_PREVIOUS" ]; then
         if [ -e "$API_DIR" ]; then
@@ -283,8 +289,10 @@ sudo find "$WEB_STAGE" -type d -exec chmod 0750 {} +
 sudo find "$WEB_STAGE" -type f -exec chmod 0640 {} +
 
 echo "[6/8] Activate API and web release"
+sudo cp -p "$ENV_FILE" "$ENV_PREVIOUS"
 sudo install -o root -g "$DEPLOY_USER" -m 0640 "$ENV_STAGE" "$ENV_FILE"
 ENV_STAGE=""
+ENV_ACTIVATED=true
 sudo install -o root -g root -m 0644 "$SOURCE_SERVICE" "$SERVICE_CONFIG"
 sudo systemctl daemon-reload
 sudo systemctl enable rinolab-api

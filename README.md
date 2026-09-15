@@ -12,6 +12,7 @@ Rinolab 홈 포털과 계정 API, 홈랩 배포 설정을 관리하는 저장소
 ## 운영 문서
 
 - [네트워크 및 Cloudflare Tunnel 구성](docs/operations/network-architecture.md)
+- [운영 배포 구조와 절차](docs/operations/deployment.md)
 - [OIDC Provider 구성 및 Immich 연결](docs/specs/oidc-provider.md)
 
 운영 환경은 공인 IP로 Caddy를 직접 노출하는 방식이 아니다. 외부 웹 요청은

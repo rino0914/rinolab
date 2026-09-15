@@ -131,7 +131,7 @@ npm run oidc:generate-key
 ```
 
 기본 출력은 Git에서 제외된 `api/.oidc/oidc-jwks.json`이며 파일이 이미 있으면 덮어쓰지
-않는다. 운영에서는 `/opt/rinolab/secrets/oidc-jwks.json` 같은 repository 외부 경로에
+않는다. 운영에서는 `/etc/rinolab/oidc-jwks.json`처럼 repository 외부 경로에
 권한 `0600`으로 저장하고 해당 파일을 API process 또는 container에 read-only로 제공한다.
 
 키를 재시작마다 다시 생성하면 기존 ID Token 검증과 logout hint 검증이 깨진다. 키 교체는

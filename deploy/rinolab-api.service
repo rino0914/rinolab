@@ -1,0 +1,53 @@
+[Unit]
+Description=Rinolab Node.js API and OIDC Provider
+Documentation=https://github.com/rino0914/rinolab/blob/main/docs/specs/oidc-provider.md
+
+Wants=network-online.target
+After=network-online.target mongod.service
+
+[Service]
+Type=simple
+
+User=gwnam
+Group=gwnam
+
+WorkingDirectory=/opt/rinolab/api
+EnvironmentFile=/etc/rinolab/api.env
+
+ExecStart=/usr/bin/node /opt/rinolab/api/src/server.js
+
+Restart=on-failure
+RestartSec=5s
+
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+UMask=0027
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+RestrictSUIDSGID=true
+LockPersonality=true
+
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+ReadOnlyPaths=/opt/rinolab/api
+ReadOnlyPaths=/etc/rinolab
+InaccessiblePaths=/srv/nas/shared/gwnam/source/rinolab
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rinolab-api
+
+[Install]
+WantedBy=multi-user.target

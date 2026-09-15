@@ -14,6 +14,8 @@ import { createOidcProvider } from "./oidc/provider.js";
 const app = express();
 const port = process.env.PORT ?? 3000;
 const isProduction = process.env.NODE_ENV === "production";
+const host = process.env.API_BIND_HOST?.trim() ||
+    (isProduction ? "127.0.0.1" : "0.0.0.0");
 const sessionSecret = process.env.SESSION_SECRET;
 const mongoUri = process.env.MONGODB_URI;
 const databaseName = process.env.MONGODB_DB;
@@ -68,8 +70,8 @@ async function startServer() {
         console.log(`OIDC Provider enabled: ${oidcConfig.issuer}`);
     }
 
-    app.listen(port, () => {
-        console.log(`Node server started on port ${port}.`);
+    app.listen(port, host, () => {
+        console.log(`Node server started at http://${host}:${port}.`);
     });
 }
 

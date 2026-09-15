@@ -6,9 +6,19 @@ CONF_CADDY="/etc/caddy/Caddyfile"
 WEB_ROOT="/var/www/rinolab"
 REPO_DIR="/srv/nas/shared/gwnam/source/rinolab"
 SOURCE_CADDY="$REPO_DIR/deploy/Caddyfile"
+DEPLOY_REF="${DEPLOY_REF:-origin/main}"
 
-echo "[1/7] Pull source"
-git -C "$REPO_DIR" pull --ff-only origin main
+echo "[1/7] Fetch and checkout source"
+
+if [ -n "$(git -C "$REPO_DIR" status --porcelain)" ]; then
+    echo "Repository has local changes; refusing to overwrite them"
+    git -C "$REPO_DIR" status --short
+    exit 1
+fi
+
+git -C "$REPO_DIR" fetch --prune origin
+git -C "$REPO_DIR" checkout --detach "$DEPLOY_REF"
+echo "Deploying commit: $(git -C "$REPO_DIR" rev-parse --short HEAD)"
 
 echo "[2/7] Install API dependencies"
 cd "$REPO_DIR/api"

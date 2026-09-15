@@ -21,6 +21,8 @@ Git checkout은 빌드·테스트 입력으로만 사용한다. `rinolab-api.ser
 ## 2. 최초 디렉터리와 권한 설정
 
 Ubuntu의 Caddy package가 `caddy` 사용자와 그룹을 생성했다는 전제다.
+`deploy/run_deploy.sh`가 아래 작업을 매번 멱등적으로 수행한다. 수동 복구나 사전 확인이
+필요할 때는 같은 명령을 직접 실행할 수 있다.
 
 ```bash
 id gwnam
@@ -39,32 +41,34 @@ systemd service 내부에서는 `ReadOnlyPaths=/opt/rinolab/api`가 적용되므
 `/etc/rinolab`은 `root:gwnam`과 `0750`, 그 안의 secret은 `root:gwnam`과 `0640`을
 사용한다. 일반 사용자는 내용을 읽을 수 없고 `gwnam`으로 실행되는 API만 읽을 수 있다.
 
-## 3. 기존 환경변수와 JWKS 이전
+## 3. 환경 설정과 secret 배포
 
-새 목적지에 파일이 이미 있으면 아래 명령은 덮어쓰지 않고 중단한다. 기존 원본도 삭제하지
-않으므로 새 구조의 동작을 확인한 뒤 별도로 보관 정책을 정한다.
+`api/.env.dev`와 `api/.env.prd`는 Git에서 관리한다. 운영 배포는 `api/.env.prd`를 기준으로
+`/etc/rinolab/api.env`를 매번 갱신하므로 포트, 도메인, OIDC client 설정 등의 변경도 일반
+배포에 포함된다.
 
-```bash
-SOURCE_ENV=/srv/nas/shared/gwnam/source/rinolab/api/.env.prd
-TARGET_ENV=/etc/rinolab/api.env
+다음 네 항목은 Git 파일에서 반드시 빈 값으로 유지한다.
 
-if sudo test -e "$TARGET_ENV"; then
-    echo "Target already exists: $TARGET_ENV"
-else
-    sudo install -o root -g gwnam -m 0640 "$SOURCE_ENV" "$TARGET_ENV"
-fi
-
-SOURCE_JWKS=/opt/rinolab/secrets/oidc-jwks.json
-TARGET_JWKS=/etc/rinolab/oidc-jwks.json
-
-if sudo test -e "$TARGET_JWKS"; then
-    echo "Target already exists: $TARGET_JWKS"
-else
-    sudo install -o root -g gwnam -m 0640 "$SOURCE_JWKS" "$TARGET_JWKS"
-fi
+```dotenv
+MONGODB_URI=
+SESSION_SECRET=
+OIDC_COOKIE_KEYS=
+OIDC_CLIENT_SECRET=
 ```
 
-`/etc/rinolab/api.env`에서 다음 값을 확인한다.
+배포 스크립트는 위 항목에 한해서 기존 `/etc/rinolab/api.env`의 값을 새 설정에 병합한다.
+따라서 서버에서 한 번 입력한 secret은 반복 배포로 지워지지 않고, 나머지 설정은 Git 버전으로
+갱신된다. Git의 `.env.prd`에 위 secret이 들어 있으면 배포를 거부한다.
+
+최초 배포에서는 `/etc/rinolab/api.env`를 만든 뒤 비어 있는 secret 이름을 표시하고 중단한다.
+다음 명령으로 값을 채운 후 배포를 다시 실행한다.
+
+```bash
+sudoedit /etc/rinolab/api.env
+/usr/local/sbin/run_deploy.sh
+```
+
+`/etc/rinolab/api.env`에서 다음 일반 설정도 확인한다.
 
 ```dotenv
 PORT=3000
@@ -73,8 +77,13 @@ NODE_ENV=production
 OIDC_SIGNING_KEY_PATH=/etc/rinolab/oidc-jwks.json
 ```
 
-필요하면 `sudoedit /etc/rinolab/api.env`로 수정한다. 기존 private JWKS를 새로 생성하면
-기존 token 검증에 영향을 주므로 이전할 파일이 있으면 반드시 그대로 복사한다.
+일반 설정은 서버에서 직접 수정해도 다음 배포에서 Git 값으로 돌아간다. 변경이 필요하면
+`api/.env.prd`를 수정해 commit한다.
+
+JWKS는 Git에서 관리하지 않는다. `/etc/rinolab/oidc-jwks.json`이 없을 때만 기존
+`/opt/rinolab/secrets/oidc-jwks.json`을 이전하고, 기존 파일도 없으면 최초 한 번 생성한다.
+이후 배포에서는 덮어쓰지 않는다. 기존 private JWKS를 새로 생성하면 기존 token 검증에 영향을
+주므로 이전할 파일이 있으면 반드시 그대로 사용한다.
 
 API 계정의 읽기 권한은 다음 명령으로 확인한다.
 
@@ -122,25 +131,11 @@ InaccessiblePaths=/srv/nas/shared/gwnam/source/rinolab
 MongoDB를 반드시 같은 systemd의 `mongod.service`로 관리하고 함께 시작해야 하는 환경만
 별도 drop-in에서 `Requires=mongod.service`를 추가한다.
 
-## 6. systemd 최초 등록
+## 6. systemd 등록
 
-아직 `/opt/rinolab/api`에 배포본이 없으므로 unit을 등록하고 enable만 한 뒤 배포 스크립트를
-실행한다.
-
-```bash
-cd /srv/nas/shared/gwnam/source/rinolab
-
-sudo install -o root -g root -m 0644 \
-    deploy/rinolab-api.service \
-    /etc/systemd/system/rinolab-api.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable rinolab-api
-sudo systemd-analyze verify /etc/systemd/system/rinolab-api.service
-```
-
-배포 스크립트도 매번 unit을 설치하고 `daemon-reload`하므로 이후 unit 변경은 일반 배포에
-포함된다.
+별도 사전 등록은 필요하지 않다. 배포 스크립트가 unit을
+`/etc/systemd/system/rinolab-api.service`에 설치하고 `daemon-reload`, `enable`, `restart`까지
+수행한다. 이미 unit을 수동 등록한 서버에서도 같은 파일로 갱신된다.
 
 ## 7. 최초 및 반복 배포
 
@@ -157,14 +152,23 @@ Node.js 22.1 이상 또는 24 LTS가 `/usr/bin/node`에 설치되어 있어야 �
 
 ```bash
 cd /srv/nas/shared/gwnam/source/rinolab
-chmod 0750 deploy/run_deploy.sh
-./deploy/run_deploy.sh
+sudo install -o root -g root -m 0755 \
+    deploy/run_deploy.sh \
+    /usr/local/sbin/run_deploy.sh
+
+/usr/local/sbin/run_deploy.sh
 ```
+
+`/usr/local/sbin`의 실행본은 Git checkout 도중 실행 중인 스크립트 자체가 바뀌는 일을 피한다.
+배포 스크립트가 변경된 release에서는 위 `install` 명령으로 실행본을 먼저 갱신한다. 스크립트
+전체를 `sudo`로 실행하지 말고 `gwnam`으로 실행한다.
 
 스크립트는 다음 순서로 실행된다.
 
 ```text
 origin/main fetch와 checkout
+→ 운영 디렉터리 생성
+→ Git 운영 설정과 기존 secret 병합 및 JWKS 최초 이전/생성
 → 환경·secret·Node·Caddy·systemd preflight
 → source npm ci와 npm test
 → /opt/rinolab의 API staging에서 npm ci --omit=dev
@@ -229,12 +233,12 @@ health check rollback이 발생하면 실패한 release가 다음 중 하나로 
 | 기존 | 변경 후 | 역할 |
 | --- | --- | --- |
 | `/srv/nas/shared/gwnam/source/rinolab/api` | `/opt/rinolab/api` | production API 실행 |
-| source 내부 `.env.prd` | `/etc/rinolab/api.env` | production 환경변수 |
+| Git의 `api/.env.prd` | `/etc/rinolab/api.env` | 일반 설정 배포 및 기존 secret 병합 |
 | `/opt/rinolab/secrets/oidc-jwks.json` | `/etc/rinolab/oidc-jwks.json` | OIDC private JWKS |
 | `/var/www/rinolab` | 유지 | Caddy 정적 웹 root |
 | `/etc/caddy/Caddyfile` | 유지 | Caddy 운영 설정 |
 | source 내부 `deploy/rinolab-api.service` | `/etc/systemd/system/rinolab-api.service` | 설치되는 systemd unit |
 
-source workspace의 `.env.prd`와 기존 JWKS는 새 경로의 파일 및 서비스 동작을 확인하기 전까지
-삭제하지 않는다. production 배포 스크립트의 rsync 대상에는 `/etc/rinolab`이 포함되지 않으므로
-Git checkout이나 일반 배포로 secret이 덮어써지지 않는다.
+기존 JWKS는 새 경로의 파일 및 서비스 동작을 확인하기 전까지 삭제하지 않는다. API source
+rsync에는 `.env*`가 포함되지 않으며, 환경파일은 별도의 병합 단계에서 `root:gwnam 0640`으로
+설치된다.

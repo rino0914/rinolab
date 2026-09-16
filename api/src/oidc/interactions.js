@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import { findActiveAccountById } from "../auth/accounts.js";
+import { isValidUsername } from "../auth/username.js";
 import { getDB } from "../db.js";
 
 const handoffLifetimeMs = 2 * 60 * 1000;
 const interactionUidPattern = /^[A-Za-z0-9_-]{16,200}$/;
+const driveClientId = "rinolab-drive";
 const interactionLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 30,
@@ -140,6 +142,25 @@ function renderHandoffForm({ issuer, uid, token, scriptNonce }) {
     });
 }
 
+function renderUsernameRequired(accountOrigin) {
+    const accountUrl = new URL("/pages/account.html", accountOrigin);
+    accountUrl.searchParams.set("returnTo", "https://drive.rinolab.org/");
+    return renderPage({
+        title: "서비스 아이디 설정 필요",
+        body: `
+            <h1>서비스 아이디를 먼저 설정해주세요</h1>
+            <p>Rinolab Drive는 파일 디렉터리를 연결하기 위해 고정된 서비스 아이디가 필요합니다.</p>
+            <p>회원정보 페이지에서 서비스 아이디를 최초 1회 설정한 뒤 Drive 로그인을 다시 시작해주세요.</p>
+            <div class="actions">
+                <a class="primary" style="border-radius:.6rem;padding:.8rem 1rem;color:white;text-decoration:none" href="${htmlEscape(accountUrl.href)}">회원정보로 이동</a>
+            </div>`
+    });
+}
+
+export function accountCanUseOidcClient(account, clientId) {
+    return clientId !== driveClientId || isValidUsername(account?.username);
+}
+
 async function saveHandoff(accountId, uid) {
     const token = crypto.randomBytes(32).toString("base64url");
     await getDB().collection("oidc_handoffs").insertOne({
@@ -224,6 +245,10 @@ export function createOidcInteractionRouter(provider, config) {
         }
 
         if (prompt.name === "consent") {
+            const account = await findActiveAccountById(details.session?.accountId);
+            if (!accountCanUseOidcClient(account, params.client_id)) {
+                return response.status(403).send(renderUsernameRequired(config.accountOrigin));
+            }
             if (params.prompt?.split(" ").includes("none")) {
                 return provider.interactionFinished(request, response, {
                     error: "consent_required",
@@ -259,6 +284,9 @@ export function createOidcInteractionRouter(provider, config) {
         if (!account) {
             return response.status(401).send("로그인 연결이 만료되었습니다. 다시 시도해주세요.");
         }
+        if (!accountCanUseOidcClient(account, details.params.client_id)) {
+            return response.status(403).send(renderUsernameRequired(config.accountOrigin));
+        }
 
         return provider.interactionFinished(request, response, {
             login: {
@@ -280,6 +308,11 @@ export function createOidcInteractionRouter(provider, config) {
             return response.status(403).send("요청 검증에 실패했습니다.");
         }
         clearCsrfCookie(response, uid, config.isProduction);
+
+        const account = await findActiveAccountById(session.accountId);
+        if (!accountCanUseOidcClient(account, params.client_id)) {
+            return response.status(403).send(renderUsernameRequired(config.accountOrigin));
+        }
 
         if (request.body.decision !== "allow") {
             return provider.interactionFinished(request, response, {

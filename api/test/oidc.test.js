@@ -10,6 +10,7 @@ import { ObjectId } from "mongodb";
 import { claimsForAccount, createOidcAccountFinder } from "../src/oidc/account.js";
 import { loadOidcConfig } from "../src/oidc/config.js";
 import { createOidcProvider } from "../src/oidc/provider.js";
+import { accountCanUseOidcClient } from "../src/oidc/interactions.js";
 
 function createTestJwks() {
     const { privateKey } = crypto.generateKeyPairSync("rsa", {
@@ -160,6 +161,27 @@ describe("OIDC account claims", () => {
             "64b64cbb2f67d0e8fdd1a001"
         );
         assert.equal(account, undefined);
+    });
+
+    it("does not synthesize a username for legacy accounts", () => {
+        const claims = claimsForAccount({
+            _id: new ObjectId("64b64cbb2f67d0e8fdd1a001"),
+            email: "legacy@rinolab.org",
+            name: "기존 사용자",
+            role: "USER"
+        });
+        assert.equal(claims.username, undefined);
+        assert.equal(claims.preferred_username, "legacy@rinolab.org");
+    });
+
+    it("blocks Drive without username but preserves Immich login", () => {
+        const legacyAccount = { email: "legacy@rinolab.org" };
+        assert.equal(accountCanUseOidcClient(legacyAccount, "rinolab-drive"), false);
+        assert.equal(accountCanUseOidcClient(legacyAccount, "immich"), true);
+        assert.equal(accountCanUseOidcClient(
+            { ...legacyAccount, username: "legacy-user" },
+            "rinolab-drive"
+        ), true);
     });
 });
 

@@ -6,6 +6,7 @@ import helmet from "helmet";
 import { fileURLToPath } from "node:url";
 import { connectDB } from "./db.js";
 import authRouter from "./routes/auth.js";
+import accountRouter from "./routes/account.js";
 import { initializeOidcStorage } from "./oidc/adapter.js";
 import { loadOidcConfig } from "./oidc/config.js";
 import { createOidcInteractionRouter } from "./oidc/interactions.js";
@@ -52,6 +53,7 @@ app.use(session({
     }
 }));
 app.use("/api/auth", authRouter);
+app.use("/api/account", accountRouter);
 
 app.get("/api/health", (request, response) => {
     response.json({ success: true });

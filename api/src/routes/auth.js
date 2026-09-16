@@ -3,11 +3,11 @@ import bcrypt from "bcrypt";
 import { rateLimit } from "express-rate-limit";
 import { authenticateAccount, findActiveAccountById } from "../auth/accounts.js";
 import { destroySession, regenerateSession, saveSession } from "../auth/session.js";
+import { isValidUsername, normalizeUsername } from "../auth/username.js";
 import { getDB } from "../db.js";
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const usernamePattern = /^[a-z][a-z0-9_-]{2,31}$/;
 const persistentSessionAge = 30 * 24 * 60 * 60 * 1000;
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -39,7 +39,7 @@ router.post("/signup", async (request, response) => {
         }
 
         const normalizedName = name.trim();
-        const normalizedUsername = username.trim().toLowerCase();
+        const normalizedUsername = normalizeUsername(username);
         const normalizedEmail = email.trim().toLowerCase();
 
         if (normalizedName.length < 1 || normalizedName.length > 50) {
@@ -48,7 +48,7 @@ router.post("/signup", async (request, response) => {
             });
         }
 
-        if (!usernamePattern.test(normalizedUsername)) {
+        if (!isValidUsername(normalizedUsername)) {
             return response.status(400).json({
                 message: "사용자 이름은 영문 소문자로 시작하고 영문 소문자, 숫자, _, -만 사용해 3~32자로 입력해주세요."
             });

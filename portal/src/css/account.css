@@ -1,0 +1,126 @@
+.account-content {
+    max-width: 820px;
+}
+
+.account-status {
+    color: var(--muted);
+}
+
+.account-panel {
+    margin-top: 16px;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.profile-list {
+    margin: 0;
+}
+
+.profile-list > div {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 20px;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+}
+
+.profile-list dt,
+.field-caption,
+.username-form label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.profile-list dd,
+.readonly-value {
+    margin: 0;
+    font-weight: 600;
+}
+
+.setup-notice {
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 650;
+}
+
+.field-caption {
+    margin: 0 0 8px;
+}
+
+.readonly-value {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--background);
+}
+
+.form-action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.form-action-row input {
+    min-width: 0;
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.form-action-row input:focus {
+    border-color: var(--accent);
+    outline: 3px solid rgba(48, 107, 91, 0.18);
+}
+
+.field-help,
+.password-row p {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.form-status {
+    margin: 12px 0 0;
+    color: var(--danger);
+    font-size: 12px;
+}
+
+.password-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.password-row h2 {
+    margin: 0;
+    font-size: 13px;
+}
+
+.drive-return {
+    margin-top: 20px;
+}
+
+@media (max-width: 680px) {
+    .form-action-row,
+    .password-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .profile-list > div {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}

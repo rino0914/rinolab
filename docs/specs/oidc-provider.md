@@ -154,18 +154,14 @@ private JWK나 client secret을 Git에 commit하지 않는다.
 
 ## 8. MongoDB 데이터
 
-`accounts.username`은 `/^[a-z][a-z0-9_-]{2,31}$/` 규칙으로 저장하며 신규 가입 시 lowercase로
-정규화한다. string username에만 적용되는 partial unique index를 사용하므로 username이 없는
-기존 계정도 서비스 시작과 로그인이 가능하다. 운영자는 다음처럼 계정별 값을 명시해 migration한다.
+`accounts.username`은 `/^[a-z][a-z0-9_-]{2,31}$/` 규칙으로 저장하며 lowercase로 정규화한다.
+string username에만 적용되는 partial unique index를 사용하므로 username이 없는 기존 계정도
+서비스 시작과 Immich 로그인이 가능하다. 기존 사용자는 포털 회원정보 페이지에서 최초 한 번
+직접 설정하며 이후 일반 사용자는 변경할 수 없다. email에서 자동 생성하지 않는다.
 
-```javascript
-db.accounts.updateOne(
-  { _id: ObjectId("<account ObjectId>"), username: { $exists: false } },
-  { $set: { username: "gwnam", updatedAt: new Date() } }
-)
-```
-
-대량 변경 전에 각 값이 규칙을 만족하고 중복되지 않는지 확인한다. email에서 자동 생성하지 않는다.
+Drive authorization 중 username이 없으면 interaction을 완료하지 않고
+`https://rinolab.org/pages/account.html`로 안내한다. Immich의 기존
+`preferred_username=email` 동작에는 이 제한을 적용하지 않는다.
 
 | Collection | 용도 | 만료 |
 | --- | --- | --- |

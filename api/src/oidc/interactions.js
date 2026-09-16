@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
-import { findActiveAccountById } from "../accounts.js";
+import { findActiveAccountById } from "../auth/accounts.js";
 import { getDB } from "../db.js";
 
 const handoffLifetimeMs = 2 * 60 * 1000;

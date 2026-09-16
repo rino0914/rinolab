@@ -1,9 +1,9 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import { rateLimit } from "express-rate-limit";
+import { authenticateAccount, findActiveAccountById } from "../auth/accounts.js";
+import { destroySession, regenerateSession, saveSession } from "../auth/session.js";
 import { getDB } from "../db.js";
-import { authenticateAccount, findActiveAccountById } from "../accounts.js";
-import { destroySession, regenerateSession, saveSession } from "../session.js";
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

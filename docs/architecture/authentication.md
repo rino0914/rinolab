@@ -1,4 +1,4 @@
-# accounts
+# 인증 및 계정 구조
 
 ## 개요
 - Collection: accounts

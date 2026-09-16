@@ -55,7 +55,7 @@ Tunnel이 Cockpit에 직접 연결되는 경우에는 Caddy 라우팅이 필요�
 
 ## 5. Caddy의 역할
 
-저장소의 [`deploy/Caddyfile`](../../deploy/Caddyfile)은 다음 요청만 처리한다.
+저장소의 [`deploy/caddy/Caddyfile`](../../deploy/caddy/Caddyfile)은 다음 요청만 처리한다.
 
 1. `rinolab.org/api/*`를 Node API의 `127.0.0.1:3000`으로 전달한다.
 2. 그 밖의 `rinolab.org` 요청에는 `/var/www/rinolab`의 정적 파일을 제공한다.

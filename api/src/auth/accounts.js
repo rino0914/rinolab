@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import { ObjectId } from "mongodb";
-import { getDB } from "./db.js";
+import { getDB } from "../db.js";
 
 const dummyPasswordHash = "$2b$12$r1mcHe0tgqmwGwFBlSvI5OGrGWqngacnLCVfjjKJEsdfTqNySPhEW";
 

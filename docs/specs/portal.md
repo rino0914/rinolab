@@ -14,7 +14,7 @@ Rinolab 홈 화면에서 새로운 홈 서버 서비스로 이동할 수 있도�
 
 ### 포함
 
-- `www/index.html`에 새 서비스 카드 추가
+- `portal/pages/dashboard.html`에 새 서비스 카드 추가
 - 카드 제목, 설명 및 링크 설정
 - 키보드와 모바일 환경에서 기존 카드와 동일하게 사용할 수 있는지 확인
 
@@ -40,7 +40,7 @@ Rinolab 홈 화면에서 새로운 홈 서버 서비스로 이동할 수 있도�
 ## 5. UI 요구사항
 
 - 새 카드는 `.services` 영역의 기존 카드 다음에 배치한다.
-- 기존 `.card` 클래스와 HTML 구조를 재사용한다.
+- 기존 `.service-card` 클래스와 HTML 구조를 재사용한다.
 - 별도의 인라인 스타일이나 중복 CSS를 추가하지 않는다.
 - 화면 폭이 좁아지면 기존 CSS Grid 규칙에 따라 자연스럽게 줄바꿈되어야 한다.
 - 기본 상태와 마우스 호버 상태의 모양은 기존 카드와 같아야 한다.
@@ -48,7 +48,7 @@ Rinolab 홈 화면에서 새로운 홈 서버 서비스로 이동할 수 있도�
 ## 6. 구현 예시
 
 ```html
-<a class="card" href="https://notes.rinolab.org">
+<a class="service-card" href="https://notes.rinolab.org">
     <h2>Notes</h2>
     <p>메모 관리</p>
 </a>
@@ -67,7 +67,7 @@ Rinolab 홈 화면에서 새로운 홈 서버 서비스로 이동할 수 있도�
 
 ## 8. 검증 방법
 
-1. 브라우저에서 `www/index.html`을 연다.
+1. 브라우저에서 `portal/pages/dashboard.html`을 연다.
 2. Notes 카드의 이름과 설명을 확인한다.
 3. Notes 카드를 클릭해 이동 URL을 확인한다.
 4. Tab 키로 카드에 포커스한 뒤 Enter 키로 이동할 수 있는지 확인한다.

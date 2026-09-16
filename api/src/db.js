@@ -3,9 +3,9 @@ import { MongoClient } from "mongodb";
 let client;
 let database;
 
-export async function connectDB() {
-    const uri = process.env.MONGODB_URI;
-    const databaseName = process.env.MONGODB_DB;
+export async function connectDB(options = {}) {
+    const uri = options.uri ?? process.env.MONGODB_URI;
+    const databaseName = options.databaseName ?? process.env.MONGODB_DB;
 
     if (!uri || !databaseName) {
         throw new Error("MongoDB 환경변수가 설정되지 않았습니다.");

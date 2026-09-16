@@ -12,13 +12,17 @@ import { createOidcInteractionRouter } from "./oidc/interactions.js";
 import { createOidcProvider } from "./oidc/provider.js";
 
 const app = express();
-const port = process.env.PORT ?? 3000;
+const port = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
 const host = process.env.API_BIND_HOST?.trim() ||
     (isProduction ? "127.0.0.1" : "0.0.0.0");
-const sessionSecret = process.env.SESSION_SECRET;
-const mongoUri = process.env.MONGODB_URI;
-const databaseName = process.env.MONGODB_DB;
+const sessionSecret = process.env.SESSION_SECRET?.trim();
+const mongoUri = process.env.MONGODB_URI?.trim();
+const databaseName = process.env.MONGODB_DB?.trim();
+
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("PORT는 1부터 65535 사이의 정수여야 합니다.");
+}
 
 if (!sessionSecret || !mongoUri || !databaseName) {
     throw new Error("세션 또는 MongoDB 환경변수가 설정되지 않았습니다.");
@@ -54,11 +58,11 @@ app.get("/api/health", (request, response) => {
 });
 
 async function startServer() {
-    await connectDB();
+    await connectDB({ uri: mongoUri, databaseName });
 
     if (!isProduction) {
-        const webRoot = fileURLToPath(new URL("../../web", import.meta.url));
-        app.use(express.static(webRoot));
+        const portalRoot = fileURLToPath(new URL("../../portal", import.meta.url));
+        app.use(express.static(portalRoot));
     }
 
     const oidcConfig = loadOidcConfig();

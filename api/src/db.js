@@ -19,6 +19,13 @@ export async function connectDB(options = {}) {
         { email: 1 },
         { unique: true }
     );
+    await database.collection("accounts").createIndex(
+        { username: 1 },
+        {
+            unique: true,
+            partialFilterExpression: { username: { $type: "string" } }
+        }
+    );
 
     console.log("MongoDB connected.");
     return database;

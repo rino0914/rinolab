@@ -7,6 +7,7 @@ import { getDB } from "../db.js";
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const usernamePattern = /^[a-z][a-z0-9_-]{2,31}$/;
 const persistentSessionAge = 30 * 24 * 60 * 60 * 1000;
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -24,24 +25,32 @@ router.use((request, response, next) => {
 
 router.post("/signup", async (request, response) => {
     try {
-        const { name, email, password } = request.body ?? {};
+        const { name, username, email, password } = request.body ?? {};
 
         if (
             typeof name !== "string" ||
+            typeof username !== "string" ||
             typeof email !== "string" ||
             typeof password !== "string"
         ) {
             return response.status(400).json({
-                message: "이름, 이메일, 비밀번호를 모두 입력해주세요."
+                message: "이름, 사용자 이름, 이메일, 비밀번호를 모두 입력해주세요."
             });
         }
 
         const normalizedName = name.trim();
+        const normalizedUsername = username.trim().toLowerCase();
         const normalizedEmail = email.trim().toLowerCase();
 
         if (normalizedName.length < 1 || normalizedName.length > 50) {
             return response.status(400).json({
                 message: "이름은 1자 이상 50자 이하로 입력해주세요."
+            });
+        }
+
+        if (!usernamePattern.test(normalizedUsername)) {
+            return response.status(400).json({
+                message: "사용자 이름은 영문 소문자로 시작하고 영문 소문자, 숫자, _, -만 사용해 3~32자로 입력해주세요."
             });
         }
 
@@ -61,6 +70,7 @@ router.post("/signup", async (request, response) => {
         const passwordHash = await bcrypt.hash(password, 12);
         const now = new Date();
         const account = {
+            username: normalizedUsername,
             email: normalizedEmail,
             passwordHash,
             name: normalizedName,
@@ -76,6 +86,7 @@ router.post("/signup", async (request, response) => {
         return response.status(201).json({
             account: {
                 id: result.insertedId,
+                username: account.username,
                 email: account.email,
                 name: account.name,
                 role: account.role,
@@ -84,8 +95,11 @@ router.post("/signup", async (request, response) => {
         });
     } catch (error) {
         if (error?.code === 11000) {
+            const duplicatedField = Object.keys(error.keyPattern ?? {})[0];
             return response.status(409).json({
-                message: "이미 사용 중인 이메일입니다."
+                message: duplicatedField === "username"
+                    ? "이미 사용 중인 사용자 이름입니다."
+                    : "이미 사용 중인 이메일입니다."
             });
         }
 
@@ -139,6 +153,7 @@ router.post("/login", loginLimiter, async (request, response) => {
         return response.json({
             account: {
                 id: account._id,
+                username: account.username,
                 email: account.email,
                 name: account.name,
                 role: account.role,
@@ -175,6 +190,7 @@ router.get("/me", async (request, response) => {
         return response.json({
             account: {
                 id: account._id,
+                username: account.username,
                 email: account.email,
                 name: account.name,
                 role: account.role,

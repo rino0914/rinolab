@@ -41,6 +41,7 @@ readonly PORTAL_PREVIOUS="/var/www/rinolab.previous"
 readonly ENV_FILE="/etc/rinolab/api.env"
 readonly ENV_PREVIOUS="/etc/rinolab/api.env.previous"
 readonly JWKS_FILE="/etc/rinolab/oidc-jwks.json"
+readonly OIDC_CLIENTS_FILE_DEFAULT="/etc/rinolab/oidc-clients.json"
 readonly SOURCE_ENV="$SOURCE_API/.env.prd"
 readonly LEGACY_JWKS_FILE="/opt/rinolab/secrets/oidc-jwks.json"
 

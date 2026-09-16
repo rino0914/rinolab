@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import http from "node:http";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { describe, it } from "node:test";
 import { ObjectId } from "mongodb";
@@ -38,6 +41,47 @@ function createEnvironment(overrides = {}) {
         OIDC_TOKEN_ENDPOINT_AUTH_METHOD: "client_secret_post",
         ...overrides
     };
+}
+
+function createRegistry(clients) {
+    const directory = mkdtempSync(join(tmpdir(), "rinolab-oidc-test-"));
+    const file = join(directory, "clients.json");
+    writeFileSync(file, JSON.stringify({ clients }));
+    return file;
+}
+
+function registryClients() {
+    return [
+        {
+            client_id: "immich",
+            client_name: "Immich",
+            client_secret: "immich-test-secret",
+            redirect_uris: ["http://localhost:2283/auth/login"],
+            post_logout_redirect_uris: ["http://localhost:2283/"],
+            grant_types: ["authorization_code", "refresh_token"],
+            response_types: ["code"],
+            token_endpoint_auth_method: "client_secret_post",
+            pkce_required: true
+        },
+        {
+            client_id: "rinolab-drive",
+            client_name: "Rinolab Drive",
+            client_secret: "drive-test-secret",
+            redirect_uris: ["https://drive.rinolab.org/api/auth/oidc/callback"],
+            post_logout_redirect_uris: ["https://drive.rinolab.org/"],
+            grant_types: ["authorization_code"],
+            response_types: ["code"],
+            token_endpoint_auth_method: "client_secret_basic",
+            pkce_required: false
+        }
+    ];
+}
+
+function createRegistryEnvironment(clients = registryClients(), overrides = {}) {
+    return createEnvironment({
+        OIDC_CLIENTS_FILE: createRegistry(clients),
+        ...overrides
+    });
 }
 
 class MemorySocket extends Duplex {
@@ -84,6 +128,7 @@ describe("OIDC account claims", () => {
         const account = {
             _id: new ObjectId("64b64cbb2f67d0e8fdd1a001"),
             email: "user@rinolab.org",
+            username: "user01",
             name: "홍길동",
             role: "USER"
         };
@@ -94,6 +139,7 @@ describe("OIDC account claims", () => {
             email_verified: false,
             name: "홍길동",
             preferred_username: "user@rinolab.org",
+            username: "user01",
             rinolab_role: "USER"
         });
     });
@@ -130,11 +176,43 @@ describe("OIDC configuration", () => {
             /wildcard/
         );
     });
+
+    it("loads multiple clients from the registry before legacy settings", () => {
+        const config = loadOidcConfig(createRegistryEnvironment(undefined, {
+            OIDC_CLIENT_ID: "ignored-legacy-client"
+        }));
+        assert.deepEqual(config.clients.map((client) => client.client_id), [
+            "immich",
+            "rinolab-drive"
+        ]);
+        assert.deepEqual(config.pkceRequiredByClient, {
+            immich: true,
+            "rinolab-drive": false
+        });
+    });
+
+    it("rejects duplicate client ids", () => {
+        const clients = registryClients();
+        clients[1].client_id = "immich";
+        assert.throws(
+            () => loadOidcConfig(createRegistryEnvironment(clients)),
+            /client_id.*서로 달라야/
+        );
+    });
+
+    it("rejects wildcard redirects in the registry", () => {
+        const clients = registryClients();
+        clients[1].redirect_uris = ["https://*.rinolab.org/callback"];
+        assert.throws(
+            () => loadOidcConfig(createRegistryEnvironment(clients)),
+            /wildcard/
+        );
+    });
 });
 
 describe("OIDC discovery", () => {
     it("publishes the required endpoints, scopes, PKCE, and RS256", async () => {
-        const config = loadOidcConfig(createEnvironment());
+        const config = loadOidcConfig(createRegistryEnvironment());
         const provider = createOidcProvider(config, {
             adapter: null,
             findAccount: async () => undefined
@@ -163,6 +241,7 @@ describe("OIDC discovery", () => {
         assert.deepEqual(discovery.id_token_signing_alg_values_supported, ["RS256"]);
         assert.ok(discovery.claims_supported.includes("email"));
         assert.ok(discovery.claims_supported.includes("preferred_username"));
+        assert.ok(discovery.claims_supported.includes("username"));
         assert.ok(discovery.claims_supported.includes("rinolab_role"));
 
         const jwksResponse = await requestProvider(provider, "/jwks");
@@ -175,8 +254,19 @@ describe("OIDC discovery", () => {
         assert.deepEqual(discovery.response_types_supported, ["code"]);
     });
 
+    it("registers Immich and Drive with their token authentication methods", async () => {
+        const provider = createOidcProvider(
+            loadOidcConfig(createRegistryEnvironment()),
+            { adapter: null, findAccount: async () => undefined }
+        );
+        const immich = await provider.Client.find("immich");
+        const drive = await provider.Client.find("rinolab-drive");
+        assert.equal(immich.tokenEndpointAuthMethod, "client_secret_post");
+        assert.equal(drive.tokenEndpointAuthMethod, "client_secret_basic");
+    });
+
     it("rejects authorization code requests without PKCE", async () => {
-        const config = loadOidcConfig(createEnvironment());
+        const config = loadOidcConfig(createRegistryEnvironment());
         const provider = createOidcProvider(config, {
             adapter: null,
             findAccount: async () => undefined
@@ -200,8 +290,42 @@ describe("OIDC discovery", () => {
         );
     });
 
+    it("starts Drive authorization without PKCE", async () => {
+        const provider = createOidcProvider(
+            loadOidcConfig(createRegistryEnvironment()),
+            { adapter: null, findAccount: async () => undefined }
+        );
+        const query = new URLSearchParams({
+            client_id: "rinolab-drive",
+            redirect_uri: "https://drive.rinolab.org/api/auth/oidc/callback",
+            response_type: "code",
+            scope: "openid email profile",
+            state: "test-state"
+        });
+        const response = await requestProvider(provider, `/auth?${query}`);
+        assert.equal(response.status, 303, response.body);
+        assert.match(response.headers.location, /^\/interaction\//);
+    });
+
+    it("rejects an unregistered Drive redirect URI", async () => {
+        const provider = createOidcProvider(
+            loadOidcConfig(createRegistryEnvironment()),
+            { adapter: null, findAccount: async () => undefined }
+        );
+        const query = new URLSearchParams({
+            client_id: "rinolab-drive",
+            redirect_uri: "https://drive.rinolab.org/wrong/callback",
+            response_type: "code",
+            scope: "openid email profile",
+            state: "test-state"
+        });
+        const response = await requestProvider(provider, `/auth?${query}`);
+        assert.equal(response.status, 400);
+        assert.match(response.body, /redirect_uri/);
+    });
+
     it("starts an interaction for a valid S256 authorization request", async () => {
-        const config = loadOidcConfig(createEnvironment());
+        const config = loadOidcConfig(createRegistryEnvironment());
         const provider = createOidcProvider(config, {
             adapter: null,
             findAccount: async () => undefined

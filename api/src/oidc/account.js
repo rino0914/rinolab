@@ -10,6 +10,7 @@ export function claimsForAccount(account) {
         email_verified: false,
         name: account.name,
         preferred_username: account.email,
+        ...(typeof account.username === "string" ? { username: account.username } : {}),
         rinolab_role: account.role
     };
 }

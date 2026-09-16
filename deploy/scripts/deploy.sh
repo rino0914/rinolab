@@ -78,12 +78,18 @@ prepare_environment() {
             "$ENV_STAGE" "$ENV_FILE"
     fi
 
+    local clients_file
+    clients_file="$(read_env_value "$ENV_STAGE" "OIDC_CLIENTS_FILE")"
+
     for secret_name in \
         MONGODB_URI \
         SESSION_SECRET \
         OIDC_COOKIE_KEYS \
         OIDC_CLIENT_SECRET; do
         secret_value="$(read_env_value "$ENV_STAGE" "$secret_name")"
+        if [ "$secret_name" = "OIDC_CLIENT_SECRET" ] && [ -n "$clients_file" ]; then
+            continue
+        fi
         if [ -z "$secret_value" ] || [[ "$secret_value" == *CHANGE_ME* ]]; then
             missing_secrets="${missing_secrets}${missing_secrets:+, }${secret_name}"
         fi
@@ -91,6 +97,23 @@ prepare_environment() {
 
     [ -z "$missing_secrets" ] ||
         fail "Set these values in $ENV_FILE, then run deployment again: $missing_secrets"
+}
+
+validate_oidc_client_registry() {
+    local clients_file
+    clients_file="$(read_env_value "$ENV_STAGE" "OIDC_CLIENTS_FILE")"
+    [ -n "$clients_file" ] || return 0
+
+    [ "$clients_file" = "$OIDC_CLIENTS_FILE_DEFAULT" ] ||
+        log_warning "OIDC client registry uses non-default path: $clients_file"
+    sudo test -f "$clients_file" || fail "OIDC client registry not found: $clients_file"
+    sudo -u "$DEPLOY_USER" test -r "$clients_file" ||
+        fail "$DEPLOY_USER cannot read $clients_file"
+    [ "$(sudo stat -c '%U:%G:%a' "$clients_file")" = "root:$DEPLOY_USER:640" ] ||
+        fail "$clients_file must be owned by root:$DEPLOY_USER with mode 0640"
+    sudo -u "$DEPLOY_USER" "$NODE_BIN" \
+        "$SOURCE_API/scripts/validate-oidc-clients.js" "$clients_file" ||
+        fail "Invalid OIDC client registry: $clients_file"
 }
 
 cleanup() {
@@ -136,7 +159,7 @@ checkout_source() {
 run_preflight() {
     require_commands \
         awk bash caddy cp curl find flock getent git install mktemp npm rsync \
-        sudo systemctl
+        stat sudo systemctl
 
     [ -x "$NODE_BIN" ] || fail "Node.js executable not found: $NODE_BIN"
 
@@ -171,6 +194,7 @@ run_preflight() {
     acquire_deploy_lock
     prepare_environment
     prepare_jwks
+    validate_oidc_client_registry
 
     sudo caddy validate --config "$SOURCE_CADDY"
 

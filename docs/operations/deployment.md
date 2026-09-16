@@ -10,6 +10,7 @@
 /var/www/rinolab.previous/            직전 웹 rollback 사본
 /etc/rinolab/api.env                  production 환경변수
 /etc/rinolab/oidc-jwks.json           OIDC private signing JWKS
+/etc/rinolab/oidc-clients.json        OIDC client registry와 client secret
 /etc/systemd/system/rinolab-api.service
 /etc/caddy/Caddyfile
 /usr/local/libexec/rinolab-deploy/     저장소 checkout과 분리한 배포 스크립트 실행본
@@ -48,7 +49,7 @@ systemd service 내부에서는 `ReadOnlyPaths=/opt/rinolab/api`가 적용되므
 `/etc/rinolab/api.env`를 매번 갱신하므로 포트, 도메인, OIDC client 설정 등의 변경도 일반
 배포에 포함된다.
 
-다음 네 항목은 Git 파일에서 반드시 빈 값으로 유지한다.
+다음 항목은 Git 파일에서 반드시 빈 값으로 유지한다.
 
 ```dotenv
 MONGODB_URI=
@@ -57,7 +58,8 @@ OIDC_COOKIE_KEYS=
 OIDC_CLIENT_SECRET=
 ```
 
-배포 스크립트는 위 항목에 한해서 기존 `/etc/rinolab/api.env`의 값을 새 설정에 병합한다.
+`OIDC_CLIENT_SECRET`은 단일-client fallback 전용이다. `OIDC_CLIENTS_FILE`이 설정된 운영에서는
+비어 있어도 된다. 배포 스크립트는 위 항목에 한해서 기존 `/etc/rinolab/api.env`의 값을 새 설정에 병합한다.
 따라서 서버에서 한 번 입력한 secret은 반복 배포로 지워지지 않고, 나머지 설정은 Git 버전으로
 갱신된다. Git의 `.env.prd`에 위 secret이 들어 있으면 배포를 거부한다.
 
@@ -76,10 +78,25 @@ PORT=3000
 API_BIND_HOST=127.0.0.1
 NODE_ENV=production
 OIDC_SIGNING_KEY_PATH=/etc/rinolab/oidc-jwks.json
+OIDC_CLIENTS_FILE=/etc/rinolab/oidc-clients.json
 ```
 
 일반 설정은 서버에서 직접 수정해도 다음 배포에서 Git 값으로 돌아간다. 변경이 필요하면
 `api/.env.prd`를 수정해 commit한다.
+
+client registry는 `deploy/examples/oidc-clients.example.json`을 참고해 서버에서 직접 만든다.
+배포 스크립트는 이 파일을 만들거나 덮어쓰지 않는다.
+
+```bash
+sudoedit /etc/rinolab/oidc-clients.json
+sudo chown root:gwnam /etc/rinolab/oidc-clients.json
+sudo chmod 0640 /etc/rinolab/oidc-clients.json
+```
+
+Immich는 `client_secret_post`와 PKCE 필수, Drive는 `client_secret_basic`과 현재 PKCE 선택
+정책이다. 각 `client_secret`은 `openssl rand -base64 48` 등으로 별도 생성한다. secret 갱신은
+해당 client의 registry 값과 consumer 설정을 함께 바꾸고 API를 재시작해 수행한다. 전환 중
+두 secret을 동시에 허용하지 않으므로 짧은 로그인 중단 시간을 잡는다.
 
 JWKS는 Git에서 관리하지 않는다. `/etc/rinolab/oidc-jwks.json`이 없을 때만 기존
 `/opt/rinolab/secrets/oidc-jwks.json`을 이전하고, 기존 파일도 없으면 최초 한 번 생성한다.
@@ -91,7 +108,8 @@ API 계정의 읽기 권한은 다음 명령으로 확인한다.
 ```bash
 sudo -u gwnam test -r /etc/rinolab/api.env
 sudo -u gwnam test -r /etc/rinolab/oidc-jwks.json
-sudo stat -c '%U:%G %a %n' /etc/rinolab/api.env /etc/rinolab/oidc-jwks.json
+sudo -u gwnam test -r /etc/rinolab/oidc-clients.json
+sudo stat -c '%U:%G %a %n' /etc/rinolab/api.env /etc/rinolab/oidc-jwks.json /etc/rinolab/oidc-clients.json
 ```
 
 기대 권한은 `root:gwnam 640`이다.
@@ -184,7 +202,7 @@ bash /srv/nas/shared/gwnam/source/rinolab/deploy/scripts/deploy.sh
 origin/main fetch와 checkout
 → 운영 디렉터리 생성
 → Git 운영 설정과 기존 secret 병합 및 JWKS 최초 이전/생성
-→ 환경·secret·Node·Caddy·systemd preflight
+→ 환경·secret·OIDC registry JSON/client 설정·Node·Caddy·systemd preflight
 → source npm ci와 npm test
 → /opt/rinolab의 API staging에서 npm ci --omit=dev
 → /var/www의 portal staging
@@ -214,6 +232,11 @@ curl --fail --show-error https://rinolab.org/api/health
 curl --fail --show-error https://auth.rinolab.org/.well-known/openid-configuration
 curl --fail --show-error https://auth.rinolab.org/jwks
 ```
+
+FileBrowser Quantum v1.5.x에는 issuer `https://auth.rinolab.org`, client ID
+`rinolab-drive`, scope `openid profile email`, `userIdentifier: username`을 설정한다. HTTP
+trusted headers에는 Caddy를 신뢰하도록 설정하고, Caddy는 Drive upstream에 외부
+`X-Forwarded-Proto: https`와 원래 `X-Forwarded-Host`를 전달한다.
 
 실행 경로와 적용 환경 파일도 확인한다.
 

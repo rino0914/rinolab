@@ -19,7 +19,7 @@ export function createOidcProvider(config, options = {}) {
 
     const provider = new Provider(config.issuer, {
         ...(Adapter ? { adapter: Adapter } : {}),
-        clients: [config.client],
+        clients: config.clients,
         jwks: config.jwks,
         cookies: {
             keys: config.cookieKeys,
@@ -37,7 +37,7 @@ export function createOidcProvider(config, options = {}) {
         claims: {
             openid: ["sub"],
             email: ["email", "email_verified"],
-            profile: ["name", "preferred_username", "rinolab_role"]
+            profile: ["name", "preferred_username", "username", "rinolab_role"]
         },
         scopes: ["openid", "profile", "email", "offline_access"],
         findAccount,
@@ -47,8 +47,8 @@ export function createOidcProvider(config, options = {}) {
             }
         },
         pkce: {
-            required() {
-                return true;
+            required(context, client) {
+                return config.pkceRequiredByClient[client.clientId] === true;
             }
         },
         clientAuthMethods: ["client_secret_post", "client_secret_basic"],

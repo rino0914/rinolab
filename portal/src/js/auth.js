@@ -65,6 +65,7 @@ forms.forEach((form) => {
             apiUrl = "/api/auth/signup";
             data = {
                 name: formData.get("name"),
+                username: formData.get("username"),
                 email: formData.get("email"),
                 password: formData.get("password")
             };

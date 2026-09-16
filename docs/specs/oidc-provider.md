@@ -50,9 +50,10 @@ Discovery 문서에서 최종 URL을 확인해야 한다.
 | JWKS | `https://auth.rinolab.org/jwks` |
 | RP-Initiated Logout | `https://auth.rinolab.org/session/end` |
 
-Authorization Code Flow만 client response type으로 허용하며 모든 authorization 요청에
-PKCE를 요구한다. PKCE method는 `S256`이다. Dynamic Client Registration은 비활성화되어
-있다.
+Authorization Code Flow만 client response type으로 허용한다. PKCE는 client registry의
+`pkce_required` 정책에 따라 요구하며, 사용할 때 method는 `S256`이다. Immich에는 계속
+PKCE를 강제하고 FileBrowser Quantum v1.5.x 기반 Drive에는 강제하지 않는다. Dynamic
+Client Registration은 비활성화되어 있다.
 
 ## 4. Scope와 claim
 
@@ -66,10 +67,12 @@ openid profile email offline_access
 | --- | --- |
 | `openid` | `sub` |
 | `email` | `email`, `email_verified` |
-| `profile` | `name`, `preferred_username`, `rinolab_role` |
+| `profile` | `name`, `preferred_username`, `username`, `rinolab_role` |
 
 `sub`는 변경 가능한 이메일이 아니라 MongoDB `accounts._id`의 문자열 표현이다.
-현재 이메일 검증 절차가 없으므로 `email_verified`는 거짓이다. `rinolab_role`은 향후
+`preferred_username`은 Immich 호환성을 위해 기존처럼 email이다. `username`은 Linux/Samba와
+Drive에 사용할 안정적인 ID이며 계정에 값이 있을 때만 노출한다. email로부터 추측해 만들지
+않는다. 현재 이메일 검증 절차가 없으므로 `email_verified`는 거짓이다. `rinolab_role`은 향후
 Rinolab 서비스의 권한 정책에 사용할 수 있지만 이번 단계에서는 Immich 관리자 권한으로
 자동 변환하지 않는다.
 
@@ -78,22 +81,22 @@ ID Token은 RS256 비대칭키로 서명된다.
 
 ## 5. Client 등록
 
-첫 client는 환경변수로 정적으로 등록한다. redirect URI는 완전히 일치해야 하며 wildcard를
-허용하지 않는다. Client ID에는 영문, 숫자, `_`, `-`만 사용한다.
+client는 `/etc/rinolab/oidc-clients.json`의 정적 registry에 등록한다. redirect URI는 완전히
+일치해야 하며 wildcard를 허용하지 않는다. Client ID에는 영문, 숫자, `_`, `-`만 사용한다.
+`pkce_required`는 Rinolab 내부 정책이며 `oidc-provider` client metadata로 전달하지 않는다.
 
-Immich 운영 예시:
+운영 파일 예시는 `deploy/examples/oidc-clients.example.json`에 있다. 주요 차이는 다음과 같다.
 
-```dotenv
-OIDC_CLIENT_ID=immich
-OIDC_CLIENT_NAME=Immich
-OIDC_CLIENT_SECRET=<32바이트 이상의 무작위 값>
-OIDC_REDIRECT_URIS=https://photo.rinolab.org/auth/login,https://photo.rinolab.org/user-settings,https://photo.rinolab.org/api/oauth/mobile-redirect
-OIDC_POST_LOGOUT_REDIRECT_URIS=https://photo.rinolab.org/
-OIDC_TOKEN_ENDPOINT_AUTH_METHOD=client_secret_post
-```
+| Client | token auth | grant | PKCE |
+| --- | --- | --- | --- |
+| `immich` | `client_secret_post` | authorization code, refresh token | 필수 |
+| `rinolab-drive` | `client_secret_basic` | authorization code | 현재 선택 |
 
-여러 client와 client 관리 UI는 이번 단계에 포함하지 않는다. 두 번째 client를 추가하기
-전에 단일 client 환경변수를 JSON 또는 MongoDB 기반 client registry로 확장한다.
+Drive redirect URI는 `https://drive.rinolab.org/api/auth/oidc/callback`이며 scope는 `openid
+profile email`, FileBrowser `userIdentifier`는 `username`이다. FileBrowser Quantum v1.5.x의
+공식 OIDC 설정 및 provider 예제에는 PKCE 설정이나 authorization request의 challenge가
+명시되지 않으므로 현재 Drive 정책은 `false`다. 향후 stable 코드에서 S256 지원을 확인한 뒤
+registry 정책만 `true`로 올릴 수 있다.
 
 ## 6. 환경변수
 
@@ -105,6 +108,7 @@ OIDC_TOKEN_ENDPOINT_AUTH_METHOD=client_secret_post
 | `OIDC_SIGNING_KEY_PATH` | private JWKS 파일 경로, 운영 권장 |
 | `OIDC_SIGNING_KEY` | private JWK/JWKS JSON 문자열, 파일 대신 사용 가능 |
 | `OIDC_COOKIE_KEYS` | 현재 키부터 쉼표로 구분한 32자 이상 cookie signing key 두 개 이상 |
+| `OIDC_CLIENTS_FILE` | JSON client registry 경로. 설정되면 아래 단일 client 변수가 무시됨 |
 | `OIDC_CLIENT_ID` | 정적 client ID |
 | `OIDC_CLIENT_NAME` | 사용자 동의 화면에 표시할 이름 |
 | `OIDC_CLIENT_SECRET` | confidential client secret |
@@ -114,6 +118,9 @@ OIDC_TOKEN_ENDPOINT_AUTH_METHOD=client_secret_post
 
 `OIDC_ENABLED=false`이면 기존 signup/login/logout/me만 실행되므로 OIDC 설정을 준비하는
 동안 기존 기능을 계속 사용할 수 있다.
+
+단일 client 환경변수는 migration fallback으로 남아 있으며 이 경로는 기존 Immich 설정과
+PKCE 필수 정책을 그대로 사용한다. 신규 운영 구성은 `OIDC_CLIENTS_FILE`을 사용한다.
 
 Cookie key와 client secret은 예를 들어 다음처럼 생성한다.
 
@@ -147,7 +154,18 @@ private JWK나 client secret을 Git에 commit하지 않는다.
 
 ## 8. MongoDB 데이터
 
-기존 `accounts`와 `sessions` 컬렉션은 그대로 유지한다.
+`accounts.username`은 `/^[a-z][a-z0-9_-]{2,31}$/` 규칙으로 저장하며 신규 가입 시 lowercase로
+정규화한다. string username에만 적용되는 partial unique index를 사용하므로 username이 없는
+기존 계정도 서비스 시작과 로그인이 가능하다. 운영자는 다음처럼 계정별 값을 명시해 migration한다.
+
+```javascript
+db.accounts.updateOne(
+  { _id: ObjectId("<account ObjectId>"), username: { $exists: false } },
+  { $set: { username: "gwnam", updatedAt: new Date() } }
+)
+```
+
+대량 변경 전에 각 값이 규칙을 만족하고 중복되지 않는지 확인한다. email에서 자동 생성하지 않는다.
 
 | Collection | 용도 | 만료 |
 | --- | --- | --- |
@@ -173,7 +191,7 @@ npm run oidc:generate-key
 export MONGODB_URI='mongodb://<user>:<password>@127.0.0.1:27017/?authSource=admin'
 export SESSION_SECRET='<local-session-secret>'
 export OIDC_COOKIE_KEYS='<current-cookie-key>,<previous-cookie-key>'
-export OIDC_CLIENT_SECRET='<local-client-secret>'
+export OIDC_CLIENT_SECRET='<local-client-secret>' # 단일-client fallback일 때만
 npm run dev
 ```
 
@@ -194,8 +212,8 @@ cd api
 npm test
 ```
 
-테스트는 Discovery와 JWKS endpoint, 필수 endpoint/scope, PKCE 없는 요청 거부, S256,
-RS256, wildcard redirect URI 거부, MongoDB ObjectId 기반 `sub` claim mapping을 확인한다.
+테스트는 복수 client와 auth method, client별 PKCE, Discovery/JWKS, username claim, 잘못된
+redirect와 wildcard 거부, MongoDB ObjectId 기반 `sub`, 비활성 계정 차단을 확인한다.
 실제 Immich 연결 전에는 브라우저에서
 authorization 요청부터 code 교환 및 UserInfo까지 통합 검증한다.
 
@@ -207,8 +225,8 @@ Immich 관리자 화면의 OAuth 설정에 다음 값을 입력한다.
 | --- | --- |
 | Enabled | 켬 |
 | Issuer URL | `https://auth.rinolab.org` |
-| Client ID | `OIDC_CLIENT_ID`와 같은 값 |
-| Client Secret | `OIDC_CLIENT_SECRET`와 같은 값 |
+| Client ID | registry의 `immich` |
+| Client Secret | registry의 Immich `client_secret` |
 | Scope | `openid email profile` |
 | Signing Algorithm | `RS256` |
 | Token Endpoint Auth Method | `client_secret_post` |

@@ -12,6 +12,7 @@
 /etc/rinolab/oidc-jwks.json           OIDC private signing JWKS
 /etc/systemd/system/rinolab-api.service
 /etc/caddy/Caddyfile
+/usr/local/libexec/rinolab-deploy/     저장소 checkout과 분리한 배포 스크립트 실행본
 ```
 
 Git checkout은 빌드·테스트 입력으로만 사용한다. `rinolab-api.service`에는 NAS source
@@ -21,7 +22,7 @@ Git checkout은 빌드·테스트 입력으로만 사용한다. `rinolab-api.ser
 ## 2. 최초 디렉터리와 권한 설정
 
 Ubuntu의 Caddy package가 `caddy` 사용자와 그룹을 생성했다는 전제다.
-`deploy/run_deploy.sh`가 아래 작업을 매번 멱등적으로 수행한다. 수동 복구나 사전 확인이
+`deploy/scripts/deploy.sh`가 아래 작업을 매번 멱등적으로 수행한다. 수동 복구나 사전 확인이
 필요할 때는 같은 명령을 직접 실행할 수 있다.
 
 ```bash
@@ -65,7 +66,7 @@ OIDC_CLIENT_SECRET=
 
 ```bash
 sudoedit /etc/rinolab/api.env
-/usr/local/sbin/run_deploy.sh
+/usr/local/libexec/rinolab-deploy/deploy.sh
 ```
 
 `/etc/rinolab/api.env`에서 다음 일반 설정도 확인한다.
@@ -113,7 +114,7 @@ sudo stat -c '%U:%G %a %n' /etc/rinolab/api.env /etc/rinolab/oidc-jwks.json
 
 ## 5. systemd 서비스
 
-저장소의 [`deploy/rinolab-api.service`](../../deploy/rinolab-api.service)를 사용한다.
+저장소의 [`deploy/systemd/rinolab-api.service`](../../deploy/systemd/rinolab-api.service)를 사용한다.
 
 중요한 실행 설정은 다음과 같다.
 
@@ -147,21 +148,35 @@ Node.js 22.1 이상 또는 24 LTS가 `/usr/bin/node`에 설치되어 있어야 �
 /usr/bin/node -p 'typeof URL.parse'
 ```
 
-두 번째 명령은 `function`을 출력해야 한다. Git 변경을 commit하고 `main`에 push한 뒤
-다음처럼 배포한다.
+두 번째 명령은 `function`을 출력해야 한다. Git 변경을 commit하고 `main`에 push한 뒤 먼저
+배포 스크립트 묶음을 Git checkout 외부에 설치한다.
 
 ```bash
 cd /srv/nas/shared/gwnam/source/rinolab
+sudo install -d -o root -g root -m 0755 \
+    /usr/local/libexec/rinolab-deploy/lib
 sudo install -o root -g root -m 0755 \
-    deploy/run_deploy.sh \
-    /usr/local/sbin/run_deploy.sh
+    deploy/scripts/deploy.sh \
+    deploy/scripts/health-check.sh \
+    deploy/scripts/rollback.sh \
+    /usr/local/libexec/rinolab-deploy/
+sudo install -o root -g root -m 0644 \
+    deploy/scripts/lib/common.sh \
+    /usr/local/libexec/rinolab-deploy/lib/common.sh
 
-/usr/local/sbin/run_deploy.sh
+/usr/local/libexec/rinolab-deploy/deploy.sh
 ```
 
-`/usr/local/sbin`의 실행본은 Git checkout 도중 실행 중인 스크립트 자체가 바뀌는 일을 피한다.
-배포 스크립트가 변경된 release에서는 위 `install` 명령으로 실행본을 먼저 갱신한다. 스크립트
-전체를 `sudo`로 실행하지 말고 `gwnam`으로 실행한다.
+외부 실행본은 Git checkout 도중 실행 중인 스크립트가 바뀌는 일을 피한다. 배포 스크립트가
+변경된 release에서는 위 `install` 명령으로 실행본을 먼저 갱신한다. 스크립트 전체를 `sudo`로
+실행하지 말고 `gwnam`으로 실행한다.
+
+checkout 외부 설치 없이 저장소의 스크립트를 직접 실행할 수도 있다. 각 스크립트는 현재 working
+directory가 아니라 자신의 위치를 기준으로 저장소와 `lib/common.sh`를 찾는다.
+
+```bash
+bash /srv/nas/shared/gwnam/source/rinolab/deploy/scripts/deploy.sh
+```
 
 스크립트는 다음 순서로 실행된다.
 
@@ -172,22 +187,25 @@ origin/main fetch와 checkout
 → 환경·secret·Node·Caddy·systemd preflight
 → source npm ci와 npm test
 → /opt/rinolab의 API staging에서 npm ci --omit=dev
-→ /var/www의 web staging
+→ /var/www의 portal staging
 → systemd unit 설치
-→ API와 web release 전환
+→ API와 portal release 전환
 → rinolab-api restart
-→ 최대 10회, 1초 간격 health check
-→ 실패 시 직전 환경 설정, API, web rollback
+→ health-check.sh: 최대 10회, 1초 간격 API health check
+→ 실패 시 rollback.sh: 직전 환경 설정, API, portal rollback
 → Caddyfile 설치 및 reload
 ```
 
 `/opt/rinolab/.deploy.lock`의 `flock`으로 동시 배포를 막는다. Jenkins도 별도 배포 로직을
-복제하지 않고 이 스크립트를 `gwnam` 권한으로 호출한다. `systemctl`, Caddyfile 설치와 web
-release 전환에 필요한 명령만 passwordless sudo로 제한하는 것을 권장한다.
+복제하지 않고 `deploy.sh`를 `gwnam` 권한으로 호출한다. 배포 후 검증 단계만 분리하려면
+`health-check.sh`를 호출한다. `systemctl`, Caddyfile 설치와 portal release 전환에 필요한
+명령만 passwordless sudo로 제한하는 것을 권장한다.
 
 ## 8. 정상 동작 확인
 
 ```bash
+bash deploy/scripts/health-check.sh
+
 sudo systemctl status rinolab-api --no-pager
 sudo systemctl status caddy --no-pager
 
@@ -206,6 +224,9 @@ sudo readlink -f /proc/$(systemctl show -p MainPID --value rinolab-api)/cwd
 ```
 
 두 번째 명령은 `/opt/rinolab/api`를 출력해야 한다.
+
+`health-check.sh`는 기존 배포와 동일하게 `http://127.0.0.1:3000/api/health`만 최대 10회
+확인한다. 성공하면 `0`, 실패하면 `0`이 아닌 exit code를 반환한다.
 
 ## 9. 로그와 장애 확인
 
@@ -228,6 +249,14 @@ health check rollback이 발생하면 실패한 release가 다음 중 하나로 
 
 원인을 확인한 후 운영자가 제거한다.
 
+직전 release로 수동 복원하려면 `gwnam` 사용자로 다음 명령을 실행한다. `rollback.sh`는
+`api.previous`, `rinolab.previous`, `api.env.previous`를 사용하고 API 서비스를 재시작한다.
+Caddy 설정은 기존 배포 동작과 마찬가지로 이 rollback의 대상이 아니다.
+
+```bash
+bash deploy/scripts/rollback.sh
+```
+
 ## 10. 변경되는 경로
 
 | 기존 | 변경 후 | 역할 |
@@ -237,7 +266,7 @@ health check rollback이 발생하면 실패한 release가 다음 중 하나로 
 | `/opt/rinolab/secrets/oidc-jwks.json` | `/etc/rinolab/oidc-jwks.json` | OIDC private JWKS |
 | `/var/www/rinolab` | 유지 | Caddy 정적 웹 root |
 | `/etc/caddy/Caddyfile` | 유지 | Caddy 운영 설정 |
-| source 내부 `deploy/rinolab-api.service` | `/etc/systemd/system/rinolab-api.service` | 설치되는 systemd unit |
+| source 내부 `deploy/systemd/rinolab-api.service` | `/etc/systemd/system/rinolab-api.service` | 설치되는 systemd unit |
 
 기존 JWKS는 새 경로의 파일 및 서비스 동작을 확인하기 전까지 삭제하지 않는다. API source
 rsync에는 `.env*`가 포함되지 않으며, 환경파일은 별도의 병합 단계에서 `root:gwnam 0640`으로

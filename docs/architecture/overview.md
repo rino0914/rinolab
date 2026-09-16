@@ -1,20 +1,36 @@
 # Rinolab 구조 개요
 
-## 1. 개요
+## 구성 요소
 
-rinolab.org url 접속 시 메인 인덱스 페이지를 정의한다.
+```text
+Browser
+  → Cloudflare Tunnel
+  → Caddy
+      ├─ /var/www/rinolab 정적 포털
+      ├─ /api/* → Node.js API (127.0.0.1:3000)
+      └─ auth.rinolab.org → OIDC Provider (127.0.0.1:3000)
+                              └─ MongoDB
+```
 
-## 2. 목적
+- `portal/`은 로그인, 회원가입, 대시보드를 포함한 정적 프런트엔드다.
+- `api/`는 계정 API, 세션과 OIDC Provider를 제공한다.
+- `deploy/`는 실행 환경별 설정을 `caddy`, `docker`, `systemd`, `scripts`로 분리한다.
+- `docs/`는 구조 설명, 운영 절차, 기능 명세를 구분해 관리한다.
 
-- 사용자가 홈 화면에서 새 서비스의 용도와 이름을 확인할 수 있어야 한다.
-- 사용자가 카드를 클릭해 해당 서비스로 이동할 수 있어야 한다.
-- 기존 서비스 카드와 일관된 디자인 및 반응형 동작을 유지해야 한다.
+## 소스와 운영 경로
 
-## 3. 기능 요구사항
+| 역할 | 경로 |
+| --- | --- |
+| Git checkout 및 테스트 | `/srv/nas/shared/gwnam/source/rinolab` |
+| production API | `/opt/rinolab/api` |
+| Caddy 정적 파일 | `/var/www/rinolab` |
+| production 환경변수와 JWKS | `/etc/rinolab` |
 
-- 인덱스 페이지에서 아래 3개 서비스를 접속할 수 있어야 한다.
-- Drive, Photo, Console
-- 인덱스 페이지는 간결하나 일반 상용 페이지의 레이아웃을 참고한다.
-- 서비스 3개에 대한 대략적인 설명이 한줄 들어가야 한다.
-- 기타 표준적인 인덱스 페이지를 참고하여 인덱스페이지를 구성한다.
-- 디자인이 우수하고 반응형이 적용되어야 한다.
+운영 프로세스는 NAS의 Git checkout을 직접 실행하지 않는다. 배포 스크립트가 테스트를 통과한
+API와 포털만 각 운영 경로로 전환한다.
+
+## 포털
+
+`portal/index.html`은 대시보드로 연결하며, 대시보드에서는 Drive, Photo, Console 같은 홈랩
+서비스와 계정 기능을 제공한다. 브라우저의 API 요청은 `/api/...` 상대 경로를 사용하므로
+외부에서는 포털과 API가 같은 origin으로 보인다.

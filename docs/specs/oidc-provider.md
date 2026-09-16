@@ -163,8 +163,8 @@ private JWK나 client secret을 Git에 commit하지 않는다.
 
 ```bash
 MONGO_ROOT_PASSWORD='<local-mongodb-password>' \
-docker compose --env-file deploy/.env.dev \
-  -f deploy/compose.dev.yml up -d mongodb
+docker compose --env-file deploy/docker/.env.dev \
+  -f deploy/docker/compose.dev.yml up -d mongodb
 
 cd api
 npm install
@@ -180,7 +180,7 @@ npm run dev
 `api/.env.dev`의 일반 설정은 Git에서 관리하고 위 secret은 빈 값으로 유지한다. `dotenv`는
 이미 export된 환경변수를 덮어쓰지 않으므로 개발자별 secret은 shell 환경에서 주입할 수 있다.
 
-개발 환경에서는 Express가 `web/` 정적 파일도 제공하므로 다음 주소를 사용할 수 있다.
+개발 환경에서는 Express가 `portal/` 정적 파일도 제공하므로 다음 주소를 사용할 수 있다.
 
 ```text
 http://localhost:3000/pages/login.html

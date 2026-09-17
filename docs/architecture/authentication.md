@@ -7,7 +7,7 @@ Express 세션을 발급하고, OIDC Provider는 같은 계정을 `sub`와 claim
 
 ```text
 portal → /api/auth/* → accounts + sessions
-OIDC Provider        → accounts + oidc_state + oidc_handoffs
+OIDC Provider        → accounts + oidc_state + oidc_handoffs + oidc_session_bindings
 ```
 
 ## 계정 컬렉션
@@ -57,6 +57,7 @@ OIDC Provider        → accounts + oidc_state + oidc_handoffs
 
 - 회원가입 비밀번호는 bcrypt hash만 저장한다.
 - 로그인 성공 시 session fixation을 막기 위해 세션 ID를 재생성한다.
+- 로그아웃/로그인 계정 전환 시 해당 포털 세션에 연결된 OIDC Session도 폐기한다.
 - production 세션 쿠키는 `HttpOnly`, `Secure`, `SameSite=Lax`로 발급한다.
 - 비활성 계정은 포털 로그인과 OIDC claim 조회에서 제외한다.
 - OIDC `sub`에는 이메일 대신 변경되지 않는 `accounts._id`를 사용한다.
@@ -83,3 +84,26 @@ Drive OIDC client는 유효한 username이 없는 계정의 interaction을 중�
 안내한다. Immich는 `preferred_username=email` 호환성을 유지하며 기존 계정도 계속 사용할 수 있다.
 
 OIDC 흐름과 client 설정은 [OIDC Provider 명세](../specs/oidc-provider.md)를 참고한다.
+
+## 포털과 Provider 세션 일치
+
+포털 `rinus.sid`는 `rinolab.org`, Provider `_session`은 `auth.rinolab.org`의 host-only 쿠키다.
+포털이 현재 계정의 원본이며, Provider 세션만으로 계정을 확정하지 않는다. 매 authorization의
+`portal_session` interaction이 현재 브라우저를 포털로 왕복시켜 계정을 확인한다. 포털에 로그인된
+사용자는 비밀번호를 다시 입력하지 않고, 동일 계정은 기존 client 동의를 재사용한다.
+
+handoff는 일회용이고 interaction UID, account ID, 포털 session ID에 묶인다. logout 전에 발급된
+token도 소비/consent/authorization 재개 시점에 세션 유효성을 재검증하므로 재사용할 수 없다.
+`oidc_session_bindings`는 Provider의 안정적인 session UID를 포털 session ID에 연결한다.
+포털 logout 또는 로그인 시 session regenerate가 이 연결만 폐기하므로 다른 기기의 로그인은 유지된다.
+
+포털 응답은 auth origin 쿠키를 삭제할 수 없지만 연결된 서버 Session을 삭제해 즉시 무효화한다.
+연결 정보가 없는 옛 세션도 포털 확인을 거친다. 계정이 달라지면 oidc-provider의 표준 end-session
+처리로 이전 OP 세션을 종료하고 새 계정으로 진행한다. `remember`는 포털의 로그인 유지 설정을 따른다.
+
+`prompt=none`은 새 포털 확인이 필요할 때 `login_required`를 반환한다. 일반 authorization에서는
+포털 세션이 유효하면 자동으로 연결된다. 기존 claim 계약 및 Drive username 필수 정책은 유지한다.
+이미 열린 RP 앱의 자체 로그인과 발급된 token을 전부 회수하는 전역 logout과는 범위가 다르다.
+
+자세한 cookie 표, 계정 전환 및 RP-Initiated Logout 흐름은
+[OIDC Provider의 세션 명세](../specs/oidc-provider.md#12-session-logout과-계정-전환)를 참고한다.

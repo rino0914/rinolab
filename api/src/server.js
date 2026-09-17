@@ -11,6 +11,7 @@ import { initializeOidcStorage } from "./oidc/adapter.js";
 import { loadOidcConfig } from "./oidc/config.js";
 import { createOidcInteractionRouter } from "./oidc/interactions.js";
 import { createOidcProvider } from "./oidc/provider.js";
+import { createPortalSessionBridge } from "./oidc/portal-session.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -35,16 +36,17 @@ if (isProduction) {
 
 app.use(helmet());
 app.use(express.json({ limit: "16kb" }));
+const portalStore = MongoStore.create({
+    mongoUrl: mongoUri,
+    dbName: databaseName,
+    collectionName: "sessions"
+});
 app.use(session({
     name: "rinus.sid",
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({
-        mongoUrl: mongoUri,
-        dbName: databaseName,
-        collectionName: "sessions"
-    }),
+    store: portalStore,
     cookie: {
         httpOnly: true,
         secure: isProduction,
@@ -70,8 +72,10 @@ async function startServer() {
     const oidcConfig = loadOidcConfig();
     if (oidcConfig) {
         await initializeOidcStorage();
-        const oidcProvider = createOidcProvider(oidcConfig);
-        app.use(createOidcInteractionRouter(oidcProvider, oidcConfig));
+        const portalSessions = createPortalSessionBridge(portalStore);
+        const oidcProvider = createOidcProvider(oidcConfig, { portalSessions });
+        app.locals.revokeOidcSessions = (id) => portalSessions.revoke(oidcProvider, id);
+        app.use(createOidcInteractionRouter(oidcProvider, oidcConfig, { portalSessions }));
         app.use(oidcProvider.callback());
         console.log(`OIDC Provider enabled: ${oidcConfig.issuer}`);
     }

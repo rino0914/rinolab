@@ -18,16 +18,19 @@ https://auth.rinolab.org
 ## 2. 인증 흐름
 
 ```text
-Immich
-  → auth.rinolab.org/auth (Authorization Code + PKCE)
-  → OIDC interaction
+Immich / Drive
+  → auth.rinolab.org/auth (Authorization Code; Immich는 PKCE 필수)
+  → portal_session interaction (매 authorization마다 현재 포털 계정 확인)
   → rinolab.org의 기존 세션 확인
      ├─ 로그인됨: 일회용 handoff 발급
      └─ 미로그인: 기존 login.html → 일회용 handoff 발급
   → auth.rinolab.org에서 handoff를 한 번만 소비
-  → 필요한 scope Immich 권한 동의
+  → 포털 세션이 여전히 유효한지 확인하고 OIDC 세션 동기화
+     ├─ 같은 계정: 세션과 기존 권한 동의 재사용
+     └─ 다른 계정: oidc-provider의 end-session 처리 후 새 계정으로 재개
+  → 필요한 scope 권한 동의 (새로운 권한일 때만)
   → authorization code 발급
-  → Immich가 /token에서 code 교환
+  → client가 /token에서 code 교환
   → ID Token, Access Token 발급
   → Access Token으로 /me UserInfo 조회
 ```
@@ -36,6 +39,11 @@ Immich
 256비트 일회용 token을 `oidc_handoffs` 컬렉션에 2분 동안 보관한다. 이 방식은
 포털 쿠키가 Drive, Photo 등 다른 서브도메인으로 전달되는 것을 막으면서 기존 로그인
 세션을 재사용한다.
+
+handoff에는 account ID, interaction UID와 발급한 포털 session ID를 함께 묶는다. 소비 시점,
+동의 시점 및 authorization 재개 시점마다 같은 session store에서 로그인 유효성을 재확인한다.
+`remember`는 포털의 로그인 유지 설정에 따르며 OIDC session만 독립적으로 장기 로그인하지 않는다.
+`sub=accounts._id`, `username=account.username`, `preferred_username=account.email`은 유지한다.
 
 ## 3. Endpoint
 
@@ -169,6 +177,7 @@ Drive authorization 중 username이 없으면 interaction을 완료하지 않고
 | `sessions` | 기존 Rinolab Express 세션 | `connect-mongo` 관리 |
 | `oidc_state` | code, token, grant, OIDC session, interaction | TTL index |
 | `oidc_handoffs` | 포털 세션에서 OIDC interaction으로 넘기는 일회용 상태 | 2분 TTL |
+| `oidc_session_bindings` | OIDC session UID → 포털 session ID 연결 | 30일 TTL, 사용 시 갱신 |
 
 `oidc_state` document는 model 이름과 `payload`를 분리하며 authorization code와 token
 소비 여부도 adapter가 저장한다. production에서 메모리 adapter를 사용하지 않는다.
@@ -210,6 +219,11 @@ npm test
 
 테스트는 복수 client와 auth method, client별 PKCE, Discovery/JWKS, username claim, 잘못된
 redirect와 wildcard 거부, MongoDB ObjectId 기반 `sub`, 비활성 계정 차단을 확인한다.
+세션 통합 테스트는 별도 host 쿠키 저장소와 실제 HTTP 서버, Express 로그인/로그아웃,
+oidc-provider authorization → code 교환 → UserInfo를 사용한다. gwnam ↔ tester09 양방향 전환,
+로그아웃 없는 직접 전환, 포털 쿠키만 삭제한 전환, handoff 재사용/브라우저 간 교환 거부,
+포털 세션 만료, 다른 기기 유지, SSO 및 RP-Initiated Logout을 검증한다. MongoDB와 외부 RP는
+테스트 대역을 사용하며 테스트 실행에는 loopback HTTP 포트를 열 수 있는 권한이 필요하다.
 실제 Immich 연결 전에는 브라우저에서
 authorization 요청부터 code 교환 및 UserInfo까지 통합 검증한다.
 
@@ -257,13 +271,72 @@ http://auth.rinolab.org {
 
 공인 IP에 80/443을 직접 공개하거나 공유기 포트포워딩을 추가할 필요는 없다.
 
-## 12. Logout 동작
+## 12. Session, logout과 계정 전환
 
-`/session/end` RP-Initiated Logout endpoint는 OIDC Provider 세션을 종료하고 등록된
-post-logout redirect URI를 검증한다. 기존 포털의 `/api/auth/logout`은 기존 Express
-세션을 종료한다.
+### Cookie와 origin
 
-현재 두 세션의 전역 logout은 연결하지 않았다. 따라서 Immich에서 OIDC logout을 해도
-포털 세션이 남아 있으면 다음 authorization에서 다시 SSO될 수 있다. 전 서비스 logout,
-front-channel logout 또는 back-channel logout은 각 client의 요구사항을 정한 뒤 후속
-단계에서 구현한다.
+| Origin | Cookie | 서버 상태 / 역할 |
+| --- | --- | --- |
+| `https://rinolab.org` | `rinus.sid` | `sessions`: 로그인 계정, 로그인 시각, 로그인 유지 설정 |
+| `https://auth.rinolab.org` | `_session`, `_session.sig` | `oidc_state`의 Session: accountId, client별 grant 등 |
+| `https://auth.rinolab.org` | `_interaction`, `_interaction_resume` 및 `.sig` | interaction/재개 경로에 제한된 단기 쿠키 |
+| `https://auth.rinolab.org` | `rinus_oidc_csrf_{uid}` | 해당 consent POST 경로의 CSRF 검증 |
+| `https://photo.rinolab.org`, `https://drive.rinolab.org` | 각 앱 자체 로그인 쿠키 | 각 RP가 관리하는 앱 세션 |
+
+포털과 Provider 쿠키는 host-only이며 `.rinolab.org` Domain으로 공유하지 않는다. 운영에서는
+`Secure`, `HttpOnly`를 사용하고 포털/Provider 쿠키는 `SameSite=Lax`, consent CSRF 쿠키는
+`SameSite=Strict`다. 동일 프로세스에서 API를 서비스해도 브라우저의 origin별 쿠키는 분리된다.
+`oidc_session_bindings`는 서버 전용 연결 정보이며 포털 session ID를 브라우저 HTML이나
+OIDC claim으로 전달하지 않는다.
+
+### 현재 계정 확인과 SSO
+
+Provider의 기본 login interaction은 `_session`에 accountId가 있으면 생략될 수 있다.
+따라서 이 구현은 login prompt보다 앞에 `portal_session` 확인을 둔다. 매 authorization마다
+브라우저가 포털로 잠깐 이동해 **지금 가진 포털 쿠키**를 확인한다. 서버에 남아 있는 옛 포털
+세션이 유효하더라도, 브라우저가 그 쿠키를 삭제하고 새 계정으로 로그인한 경우를 구분하기 위해서다.
+
+포털 로그인 상태가 유지되면 비밀번호를 다시 요구하지 않는다. 계정과 허용 scope가 같으면
+기존 동의를 재사용한다. 모든 요청에 `prompt=login`이나 `max_age=0`을 추가하지 않는다.
+
+새 authorization의 `prompt=none`은 포털 확인을 생략하고 옛 계정으로 성공시키지 않도록
+`login_required`를 반환한다. client는 일반 authorization으로 다시 시작해야 한다. 포털에
+로그인되어 있으면 이때도 비밀번호 입력 없이 진행된다.
+
+### 포털 logout과 전환
+
+1. `POST /api/auth/logout`이 현재 Express 세션을 삭제한다.
+2. 해당 포털 session ID에 연결된 OIDC Session을 Provider의 `Session.destroy()`로 폐기한다.
+3. 포털 응답은 `rinus.sid`를 삭제하고 기존처럼 204를 반환한다.
+4. 다른 계정으로 로그인하면 새 포털 session ID를 발급한다. 로그아웃 없이 `/api/auth/login`을
+   호출해도 기존 포털 세션을 regenerate하면서 연결된 OIDC Session을 폐기한다.
+5. 다음 Drive/Immich authorization은 새 포털 계정을 확인하고 그 계정으로만 발급한다.
+
+포털 응답으로 다른 host의 `_session` 쿠키를 지울 수는 없다. 브라우저에 값이 잠시 남더라도
+서버 Session이 없으므로 인증 근거가 되지 않으며, 다음 Provider 접근에서 새 값으로 교체된다.
+다른 브라우저/기기의 같은 계정까지 일괄 로그아웃시키지는 않는다.
+
+연결 정보가 없는 배포 이전 OIDC 세션도 매 authorization의 포털 확인을 통과해야 한다.
+포털 쿠키만 삭제해 옛 Provider 세션이 남아 있는 경우, handoff가 현재 계정을 확인한다.
+서로 다른 accountId가 감지되면 oidc-provider 9.x의 내장 account-switch 경로가 CSRF token을
+갖춘 `/session/end/confirm` POST로 이전 OP 세션을 종료한 뒤 authorization을 재개한다.
+이 동작은 직접 accountId를 덮어써 이전 계정의 grant를 이어받는 것을 방지한다.
+
+### RP-Initiated Logout과 범위
+
+`/session/end`는 계속 표준 RP-Initiated Logout endpoint다. 실제 RP가 발급받은
+`id_token_hint`, 등록된 `post_logout_redirect_uri`, `state`를 검증하고, logout 확인과
+CSRF 검증은 oidc-provider에 맡긴다. 포털은 OIDC RP가 아니므로 ID Token을 갖고 있지 않다.
+포털 logout에는 위의 서버 세션 연결을 사용하며, 다른 client의 ID Token을 만들거나 표준
+logout 확인을 무조건 생략하지 않는다.
+[RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)을 기준으로
+검토했으며, 구현은 설치된 oidc-provider의 session 및 authorization-resume lifecycle을 따른다.
+
+RP에서 OP logout만 수행하면 포털 로그인은 유지되므로 다음 authorization은 포털의 현재 계정으로
+다시 SSO할 수 있다. 포털 logout은 새 OIDC 인증에 옛 계정 세션을 재사용하지 못하게 하지만,
+이미 발급된 access/refresh token이나 Immich/FileBrowser 자체 로그인까지 전부 종료하는 기능은
+아니다. 각 RP의 앱 세션 종료에는 해당 앱 logout 또는 별도로 합의된 back-channel logout이 필요하다.
+
+배포 시 새 MongoDB 연결 컬렉션과 index는 API 시작 단계에서 생성한다. signing key, client secret,
+Cloudflare 설정 변경은 필요하지 않다. 진행 중이던 옛 handoff는 새 세션 검증을 통과하지 못하면
+서비스에서 다시 로그인해야 한다.

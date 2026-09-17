@@ -41,6 +41,10 @@ export async function initializeOidcStorage(database = getDB()) {
         { expiresAt: 1 },
         { name: "oidc_handoff_expiry", expireAfterSeconds: 0 }
     );
+    await database.collection("oidc_session_bindings").createIndexes([
+        { key: { portalSessionId: 1 }, name: "oidc_portal_session" },
+        { key: { expiresAt: 1 }, name: "oidc_binding_expiry", expireAfterSeconds: 0 }
+    ]);
 }
 
 export class MongoOidcAdapter {

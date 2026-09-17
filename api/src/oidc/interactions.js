@@ -8,12 +8,6 @@ import { getDB } from "../db.js";
 const handoffLifetimeMs = 2 * 60 * 1000;
 const interactionUidPattern = /^[A-Za-z0-9_-]{16,200}$/;
 const driveClientId = "rinolab-drive";
-const interactionLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 30,
-    standardHeaders: true,
-    legacyHeaders: false
-});
 
 function htmlEscape(value) {
     return String(value)
@@ -161,34 +155,44 @@ export function accountCanUseOidcClient(account, clientId) {
     return clientId !== driveClientId || isValidUsername(account?.username);
 }
 
-async function saveHandoff(accountId, uid) {
+async function saveHandoff(database, accountId, portalSessionId, uid) {
     const token = crypto.randomBytes(32).toString("base64url");
-    await getDB().collection("oidc_handoffs").insertOne({
+    await database.collection("oidc_handoffs").insertOne({
         _id: tokenHash(token),
         accountId,
+        portalSessionId,
         uid,
         expiresAt: new Date(Date.now() + handoffLifetimeMs)
     });
     return token;
 }
 
-async function consumeHandoff(token, uid) {
+async function consumeHandoff(database, token, uid) {
     if (typeof token !== "string" || token.length > 200) return undefined;
 
-    const handoff = await getDB().collection("oidc_handoffs").findOneAndDelete({
+    const handoff = await database.collection("oidc_handoffs").findOneAndDelete({
         _id: tokenHash(token),
         uid,
         expiresAt: { $gt: new Date() }
     });
 
-    return handoff?.accountId;
+    return handoff;
 }
 
 function loginReturnPath(uid) {
     return `/api/oidc/handoff?uid=${encodeURIComponent(uid)}`;
 }
 
-export function createOidcInteractionRouter(provider, config) {
+export function createOidcInteractionRouter(provider, config, options = {}) {
+    const interactionLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: 30,
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+    const findAccount = options.findAccount ?? findActiveAccountById;
+    const getDatabase = options.getDatabase ?? getDB;
+    const portalSessions = options.portalSessions;
     const router = express.Router();
     const parseForm = express.urlencoded({ extended: false, limit: "8kb" });
     const noStore = (request, response, next) => {
@@ -205,14 +209,19 @@ export function createOidcInteractionRouter(provider, config) {
             return response.status(400).send("잘못된 OIDC 요청입니다.");
         }
 
-        const account = await findActiveAccountById(request.session.accountId);
+        if (request.get("host") !== new URL(config.accountOrigin).host) {
+            return response.status(400).send("포털에서 로그인 상태를 확인해주세요.");
+        }
+        const account = await findAccount(request.session.accountId);
         if (!account) {
             const loginUrl = new URL("/pages/login.html", config.accountOrigin);
             loginUrl.searchParams.set("returnTo", loginReturnPath(uid));
             return response.redirect(303, loginUrl.href);
         }
 
-        const token = await saveHandoff(account._id.toString(), uid);
+        const token = await saveHandoff(
+            getDatabase(), account._id.toString(), request.sessionID, uid
+        );
         const scriptNonce = crypto.randomBytes(18).toString("base64url");
         response.set(
             "Content-Security-Policy",
@@ -231,7 +240,7 @@ export function createOidcInteractionRouter(provider, config) {
         const details = await provider.interactionDetails(request, response);
         const { prompt, params, uid } = details;
 
-        if (prompt.name === "login") {
+        if (prompt.name === "login" || prompt.name === "portal_session") {
             if (params.prompt?.split(" ").includes("none")) {
                 return provider.interactionFinished(request, response, {
                     error: "login_required",
@@ -245,7 +254,11 @@ export function createOidcInteractionRouter(provider, config) {
         }
 
         if (prompt.name === "consent") {
-            const account = await findActiveAccountById(details.session?.accountId);
+            const login = details.lastSubmission?.login;
+            if (!await portalSessions?.read(login?.portalSessionId, details.session?.accountId)) {
+                return response.status(401).send("로그인 계정이 변경되었거나 만료되었습니다. 서비스에서 로그인을 다시 시작해주세요.");
+            }
+            const account = await findAccount(details.session?.accountId);
             if (!accountCanUseOidcClient(account, params.client_id)) {
                 return response.status(403).send(renderUsernameRequired(config.accountOrigin));
             }
@@ -275,12 +288,14 @@ export function createOidcInteractionRouter(provider, config) {
 
     router.post("/interaction/:uid/handoff", parseForm, async (request, response) => {
         const details = await provider.interactionDetails(request, response);
-        if (details.prompt.name !== "login" || details.uid !== request.params.uid) {
+        if (!["login", "portal_session"].includes(details.prompt.name) ||
+            details.uid !== request.params.uid) {
             return response.status(400).send("로그인 interaction이 아닙니다.");
         }
 
-        const accountId = await consumeHandoff(request.body.token, details.uid);
-        const account = await findActiveAccountById(accountId);
+        const handoff = await consumeHandoff(getDatabase(), request.body.token, details.uid);
+        const portalSession = await portalSessions?.read(handoff?.portalSessionId, handoff?.accountId);
+        const account = portalSession && await findAccount(handoff.accountId);
         if (!account) {
             return response.status(401).send("로그인 연결이 만료되었습니다. 다시 시도해주세요.");
         }
@@ -291,8 +306,10 @@ export function createOidcInteractionRouter(provider, config) {
         return provider.interactionFinished(request, response, {
             login: {
                 accountId: account._id.toString(),
+                portalSessionId: handoff.portalSessionId,
                 amr: ["pwd"],
-                remember: true
+                ts: portalSession.authenticatedAt,
+                remember: Boolean(portalSession.cookie?.expires)
             }
         }, { mergeWithLastSubmission: false });
     });
@@ -309,7 +326,11 @@ export function createOidcInteractionRouter(provider, config) {
         }
         clearCsrfCookie(response, uid, config.isProduction);
 
-        const account = await findActiveAccountById(session.accountId);
+        const login = details.lastSubmission?.login;
+        if (!await portalSessions?.read(login?.portalSessionId, session.accountId)) {
+            return response.status(401).send("로그인 계정이 변경되었거나 만료되었습니다. 서비스에서 로그인을 다시 시작해주세요.");
+        }
+        const account = await findAccount(session.accountId);
         if (!accountCanUseOidcClient(account, params.client_id)) {
             return response.status(403).send(renderUsernameRequired(config.accountOrigin));
         }
@@ -350,8 +371,11 @@ export function createOidcInteractionRouter(provider, config) {
     });
 
     router.use((error, request, response, next) => {
-        console.error("OIDC interaction 실패:", error);
         if (response.headersSent) return next(error);
+        if (error?.error === "session_not_found") {
+            return response.status(400).send("인증 세션이 변경되었거나 만료되었습니다. 서비스에서 로그인을 다시 시작해주세요.");
+        }
+        console.error("OIDC interaction 실패:", error);
         return response.status(500).send("OIDC 요청을 처리하지 못했습니다.");
     });
 

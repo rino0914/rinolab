@@ -1,4 +1,4 @@
-import { Provider } from "oidc-provider";
+import { Provider, interactionPolicy } from "oidc-provider";
 import { MongoOidcAdapter } from "./adapter.js";
 import { createOidcAccountFinder } from "./account.js";
 
@@ -16,6 +16,15 @@ export function createOidcProvider(config, options = {}) {
         ? MongoOidcAdapter
         : options.adapter;
     const findAccount = options.findAccount ?? createOidcAccountFinder();
+    const policy = interactionPolicy.base();
+    policy.add(new interactionPolicy.Prompt({ name: "portal_session" },
+        new interactionPolicy.Check(
+            "portal_session_required",
+            "현재 Rinolab 로그인 계정을 확인해야 합니다.",
+            "login_required",
+            async (context) => !await options.portalSessions?.verifyAuthorization(context)
+        )
+    ), 0);
 
     const provider = new Provider(config.issuer, {
         ...(Adapter ? { adapter: Adapter } : {}),
@@ -42,6 +51,7 @@ export function createOidcProvider(config, options = {}) {
         scopes: ["openid", "profile", "email", "offline_access"],
         findAccount,
         interactions: {
+            policy,
             url(context, interaction) {
                 return `/interaction/${interaction.uid}`;
             }

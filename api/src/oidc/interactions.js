@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
+import { errors } from "oidc-provider";
 import { findActiveAccountById } from "../auth/accounts.js";
 import { isValidUsername } from "../auth/username.js";
 import { getDB } from "../db.js";
@@ -372,7 +373,8 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
 
     router.use((error, request, response, next) => {
         if (response.headersSent) return next(error);
-        if (error?.error === "session_not_found") {
+        // SessionNotFound uses the protocol error "invalid_request", not "session_not_found".
+        if (error instanceof errors.SessionNotFound) {
             return response.status(400).send("인증 세션이 변경되었거나 만료되었습니다. 서비스에서 로그인을 다시 시작해주세요.");
         }
         console.error("OIDC interaction 실패:", error);

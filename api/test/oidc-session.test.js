@@ -7,6 +7,7 @@ import express from "express";
 import session from "express-session";
 import bcrypt from "bcrypt";
 import { ObjectId } from "mongodb";
+import { errors } from "oidc-provider";
 import { authenticateAccount, findActiveAccountById } from "../src/auth/accounts.js";
 import { createAuthRouter } from "../src/routes/auth.js";
 import { createOidcProvider } from "../src/oidc/provider.js";
@@ -393,27 +394,36 @@ describe("portal and OIDC session lifecycle", () => {
         assert.equal(new URL(portal.location).origin, f.portal);
     });
 
-    it("does not accept the previous account's pending consent after switching accounts", async (t) => {
-        const f = await fixture(t);
-        const browser = new Browser(f);
-        await browser.login("gwnam");
-        const pending = await handoff(browser);
-        const finished = await browser.request(`/interaction/${pending.uid}/handoff`, {
-            method: "POST", form: { token: pending.token }
-        });
-        const resumed = await browser.request(finished.location);
-        const consent = await browser.request(resumed.location);
-        assert.equal(consent.status, 200);
-        const csrfToken = hidden(consent.body, "csrfToken");
-        await browser.logout();
-        await browser.login("tester09");
-        const stale = await browser.request(`${resumed.location}/consent`, {
-            method: "POST", form: { csrfToken, decision: "allow" }
-        });
-        assert.equal(stale.status, 400);
-        assert.equal(stale.location, null);
-        assertAccount((await signIn(browser, "rinolab-drive")).claims, "tester09");
-    });
+    for (const clientId of ["immich", "rinolab-drive"]) {
+        for (const [first, second] of [["gwnam", "tester09"], ["tester09", "gwnam"]]) {
+            it(`does not accept the previous account's pending consent after switching accounts (${clientId}: ${first} → ${second})`, async (t) => {
+                const f = await fixture(t);
+                const browser = new Browser(f);
+                await browser.login(first);
+                const pending = await handoff(browser, clientId);
+                const finished = await browser.request(`/interaction/${pending.uid}/handoff`, {
+                    method: "POST", form: { token: pending.token }
+                });
+                const resumed = await browser.request(finished.location);
+                const consent = await browser.request(resumed.location);
+                assert.equal(consent.status, 200);
+                const csrfToken = hidden(consent.body, "csrfToken");
+                await browser.logout();
+                await browser.login(second);
+                const finish = t.mock.method(f.provider, "interactionFinished");
+                const saveGrant = t.mock.method(f.provider.Grant.prototype, "save");
+                const stale = await browser.request(`${resumed.location}/consent`, {
+                    method: "POST", form: { csrfToken, decision: "allow" }
+                });
+                assert.equal(stale.status, 400, stale.body);
+                assert.equal(stale.location, null);
+                assert.match(stale.body, /서비스에서 로그인을 다시 시작해주세요/);
+                assert.equal(finish.mock.callCount(), 0);
+                assert.equal(saveGrant.mock.callCount(), 0);
+                assertAccount((await signIn(browser, clientId)).claims, second);
+            });
+        }
+    }
 
     it("logs out only the linked portal session, leaving another browser's SSO intact", async (t) => {
         const f = await fixture(t);
@@ -465,5 +475,51 @@ describe("portal and OIDC session lifecycle", () => {
         assert.equal(result.location, "https://immich.example/?state=logout-state");
         assert.equal(await f.provider.Session.findByUid(binding._id), undefined);
         assertAccount((await signIn(browser, "immich")).claims, "gwnam");
+    });
+});
+
+describe("OIDC interaction error handling", () => {
+    for (const description of [
+        "interaction session id cookie not found",
+        "interaction session not found",
+        "session not found",
+        "session principal changed"
+    ]) {
+        it(`returns 400 for SessionNotFound: ${description}`, async (t) => {
+            const f = await fixture(t);
+            const browser = new Browser(f);
+            const error = new errors.SessionNotFound(description);
+            assert.equal(error.error, "invalid_request");
+            t.mock.method(f.provider, "interactionDetails", async () => { throw error; });
+            const log = t.mock.method(console, "error", () => {});
+            for (const [path, options] of [
+                ["/interaction/stale-interaction", {}],
+                ["/interaction/stale-interaction/handoff", { method: "POST", form: { token: "old-token" } }],
+                ["/interaction/stale-interaction/consent", { method: "POST", form: { csrfToken: "old-csrf", decision: "allow" } }]
+            ]) {
+                const response = await browser.request(path, options);
+                assert.equal(response.status, 400, response.body);
+                assert.equal(response.location, null);
+                assert.match(response.body, /서비스에서 로그인을 다시 시작해주세요/);
+                assert.ok(!response.body.includes(description));
+            }
+            assert.equal(log.mock.callCount(), 0);
+        });
+    }
+
+    it("keeps unexpected provider failures as 500 without exposing error details", async (t) => {
+        const f = await fixture(t);
+        const browser = new Browser(f);
+        const error = new Error("internal session storage failure");
+        t.mock.method(f.provider, "interactionDetails", async () => { throw error; });
+        const log = t.mock.method(console, "error", () => {});
+        const response = await browser.request("/interaction/stale-interaction/consent", {
+            method: "POST", form: { csrfToken: "old-csrf", decision: "allow" }
+        });
+        assert.equal(response.status, 500);
+        assert.equal(response.location, null);
+        assert.equal(response.body, "OIDC 요청을 처리하지 못했습니다.");
+        assert.equal(log.mock.callCount(), 1);
+        assert.equal(log.mock.calls[0].arguments[1], error);
     });
 });

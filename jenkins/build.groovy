@@ -6,26 +6,41 @@ pipeline {
     }
 
     options {
+        // Pipeline script from SCM이 자동으로 수행하는
+        // 기본 Checkout을 막고 아래 Checkout stage에서 한 번만 수행
+        skipDefaultCheckout(true)
+
+        // Jenkins 로그에 시간 표시
         timestamps()
+
+        // 동일 Pipeline 동시 실행 방지
         disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
+
+        // 최근 빌드 20개만 보관
+        buildDiscarder(
+            logRotator(
+                numToKeepStr: '20'
+            )
+        )
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/rino0914/rinolab.git'
+                checkout scm
             }
         }
 
         stage('Environment') {
             steps {
                 sh '''
-                    echo "Node: $(node --version)"
-                    echo "npm : $(npm --version)"
-                    echo "Git : $(git --version)"
-                    echo "Commit: $(git rev-parse --short HEAD)"
+                    echo "=== Build Environment ==="
+                    echo "Node   : $(node --version)"
+                    echo "npm    : $(npm --version)"
+                    echo "Git    : $(git --version)"
+                    echo "Branch : $(git rev-parse --abbrev-ref HEAD)"
+                    echo "Commit : $(git rev-parse --short HEAD)"
                 '''
             }
         }
@@ -48,6 +63,7 @@ pipeline {
     }
 
     post {
+
         success {
             echo 'Rinolab build SUCCESS'
         }

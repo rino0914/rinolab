@@ -272,12 +272,14 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         const details = await provider.interactionDetails(request, response);
         const { prompt, params, uid } = details;
         console.log("[OIDC][GET Interaction] 세션 조회 성공");
-        
+
         // prompt == 작업 인증단계
         // login = 로그일 필요
         // portal_session 포털 세션 확인 필요 (포털 로그인 세션 = OIDC 인증 사용자 일치 확인)
+        console.log("[OIDC] prompt=",prompt.name);
         if (prompt.name === "login" || prompt.name === "portal_session") {
             if (params.prompt?.split(" ").includes("none")) {
+
                 return provider.interactionFinished(request, response, {
                     error: "login_required",
                     error_description: "로그인이 필요합니다."

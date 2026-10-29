@@ -201,34 +201,63 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         next();
     };
 
+    // Handoff 경로의 요청 횟수 제한 및 캐시 방지
     router.use("/api/oidc/handoff", interactionLimiter, noStore);
+
+    // 요청 횟수 제한 및 캐시 방지
     router.use("/interaction", interactionLimiter, noStore);
 
+    // 로그인 세션 확인 및 handoff 처리
     router.get("/api/oidc/handoff", async (request, response) => {
+        console.info("[OIDC][INFO] Handoff 요청 시작");
+    
         const uid = request.query.uid;
+        console.debug("[OIDC][DEBUG] UID 검증 시작");
+    
         if (typeof uid !== "string" || !interactionUidPattern.test(uid)) {
+            console.warn("[OIDC][WARN] 잘못된 UID");
             return response.status(400).send("잘못된 OIDC 요청입니다.");
         }
-
+        console.debug("[OIDC][DEBUG] UID 검증 성공");
+    
         if (request.get("host") !== new URL(config.accountOrigin).host) {
+            console.warn("[OIDC][WARN] Host 불일치");
             return response.status(400).send("포털에서 로그인 상태를 확인해주세요.");
         }
+        console.debug("[OIDC][DEBUG] Host 검증 성공");
+    
+        console.debug("[OIDC][DEBUG] 계정 조회 시작", {
+            hasAccountId: Boolean(request.session?.accountId)
+        });
+    
         const account = await findAccount(request.session.accountId);
+        console.debug("[OIDC][DEBUG] 계정 조회 결과", {
+            found: Boolean(account)
+        });
+    
         if (!account) {
+            console.info("[OIDC][INFO] 계정 없음 → 로그인 페이지 이동");
             const loginUrl = new URL("/pages/login.html", config.accountOrigin);
             loginUrl.searchParams.set("returnTo", loginReturnPath(uid));
             return response.redirect(303, loginUrl.href);
         }
-
+    
+        console.debug("[OIDC][DEBUG] Handoff 저장 시작");
+    
         const token = await saveHandoff(
             getDatabase(), account._id.toString(), request.sessionID, uid
         );
+        console.info("[OIDC][INFO] Handoff 저장 완료");
+    
         const scriptNonce = crypto.randomBytes(18).toString("base64url");
         response.set(
             "Content-Security-Policy",
             `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action ${config.issuer}; base-uri 'none'; frame-ancestors 'none'`
         );
         response.set("Referrer-Policy", "no-referrer");
+    
+        console.info("[OIDC][INFO] Handoff Form 응답");
+    
         return response.send(renderHandoffForm({
             issuer: config.issuer,
             uid,
@@ -237,10 +266,16 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         }));
     });
 
+    // OIDC 인증 단계 확인 후 로그인 또는 동의 화면으로 분기
     router.get("/interaction/:uid", async (request, response) => {
+        console.log("[OIDC][GET Interaction] 요청 진입");
         const details = await provider.interactionDetails(request, response);
         const { prompt, params, uid } = details;
-
+        console.log("[OIDC][GET Interaction] 세션 조회 성공");
+        
+        // prompt == 작업 인증단계
+        // login = 로그일 필요
+        // portal_session 포털 세션 확인 필요 (포털 로그인 세션 = OIDC 인증 사용자 일치 확인)
         if (prompt.name === "login" || prompt.name === "portal_session") {
             if (params.prompt?.split(" ").includes("none")) {
                 return provider.interactionFinished(request, response, {
@@ -253,7 +288,7 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
             handoffUrl.searchParams.set("uid", uid);
             return response.redirect(303, handoffUrl.href);
         }
-
+        // consent = 사용자 동의 필요
         if (prompt.name === "consent") {
             const login = details.lastSubmission?.login;
             if (!await portalSessions?.read(login?.portalSessionId, details.session?.accountId)) {
@@ -287,6 +322,7 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         return response.status(501).send("지원하지 않는 OIDC interaction입니다.");
     });
 
+    // 포털 로그인 정보를 OIDC 인증 세션에 연결
     router.post("/interaction/:uid/handoff", parseForm, async (request, response) => {
         const details = await provider.interactionDetails(request, response);
         if (!["login", "portal_session"].includes(details.prompt.name) ||
@@ -315,6 +351,7 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         }, { mergeWithLastSubmission: false });
     });
 
+    // 사용자의 서비스 접근 동의 또는 거부 처리
     router.post("/interaction/:uid/consent", parseForm, async (request, response) => {
         const details = await provider.interactionDetails(request, response);
         const { prompt, params, session, grantId, uid } = details;
@@ -371,6 +408,7 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         });
     });
 
+    // 앞선 미들웨어 및 라우터에서 전달된 예외 처리
     router.use((error, request, response, next) => {
         if (response.headersSent) return next(error);
         // SessionNotFound uses the protocol error "invalid_request", not "session_not_found".

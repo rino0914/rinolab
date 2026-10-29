@@ -247,6 +247,7 @@ prepare_jwks() {
 }
 
 test_source() {
+    "$NODE_BIN" --test "$REPO_DIR"/deploy/tests/*.test.mjs
     (
         cd "$SOURCE_API"
         npm ci

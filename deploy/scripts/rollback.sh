@@ -67,7 +67,9 @@ main() {
         fail "Restored API entry point not found: $API_DIR/src/server.js"
     fi
 
-    sudo systemctl restart "$API_SERVICE"
+    if ! sudo test -f "$SERVICE_PREVIOUS_ABSENT"; then
+        sudo systemctl restart "$API_SERVICE"
+    fi
     log "Rollback complete"
 }
 

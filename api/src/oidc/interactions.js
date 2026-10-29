@@ -1,3 +1,4 @@
+
 import crypto from "node:crypto";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
@@ -210,54 +211,56 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
     // 로그인 세션 확인 및 handoff 처리
     router.get("/api/oidc/handoff", async (request, response) => {
         console.info("[OIDC][INFO] Handoff 요청 시작");
-    
         const uid = request.query.uid;
         console.debug("[OIDC][DEBUG] UID 검증 시작");
-    
+
         if (typeof uid !== "string" || !interactionUidPattern.test(uid)) {
             console.warn("[OIDC][WARN] 잘못된 UID");
             return response.status(400).send("잘못된 OIDC 요청입니다.");
         }
         console.debug("[OIDC][DEBUG] UID 검증 성공");
-    
+
         if (request.get("host") !== new URL(config.accountOrigin).host) {
             console.warn("[OIDC][WARN] Host 불일치");
             return response.status(400).send("포털에서 로그인 상태를 확인해주세요.");
         }
         console.debug("[OIDC][DEBUG] Host 검증 성공");
-    
+
         console.debug("[OIDC][DEBUG] 계정 조회 시작", {
             hasAccountId: Boolean(request.session?.accountId)
         });
-    
+
         const account = await findAccount(request.session.accountId);
         console.debug("[OIDC][DEBUG] 계정 조회 결과", {
             found: Boolean(account)
         });
-    
+
         if (!account) {
             console.info("[OIDC][INFO] 계정 없음 → 로그인 페이지 이동");
             const loginUrl = new URL("/pages/login.html", config.accountOrigin);
             loginUrl.searchParams.set("returnTo", loginReturnPath(uid));
             return response.redirect(303, loginUrl.href);
         }
-    
+
         console.debug("[OIDC][DEBUG] Handoff 저장 시작");
-    
+
         const token = await saveHandoff(
             getDatabase(), account._id.toString(), request.sessionID, uid
         );
         console.info("[OIDC][INFO] Handoff 저장 완료");
-    
+
         const scriptNonce = crypto.randomBytes(18).toString("base64url");
+
+        // Safari의 form-action 리다이렉트 검사에서
+        // FileBrowser OIDC 콜백 도메인도 허용
         response.set(
             "Content-Security-Policy",
-            `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action ${config.issuer}; base-uri 'none'; frame-ancestors 'none'`
+            `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action ${config.issuer} https://drive.rinolab.org; base-uri 'none'; frame-ancestors 'none'`
         );
         response.set("Referrer-Policy", "no-referrer");
-    
+
         console.info("[OIDC][INFO] Handoff Form 응답");
-    
+
         return response.send(renderHandoffForm({
             issuer: config.issuer,
             uid,
@@ -289,7 +292,7 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
             handoffUrl.searchParams.set("uid", uid);
             return response.redirect(303, handoffUrl.href);
         }
-        
+
         // consent = 사용자 동의 필요
         if (prompt.name === "consent") {
             const login = details.lastSubmission?.login;

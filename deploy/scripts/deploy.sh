@@ -10,7 +10,21 @@ source "$SCRIPT_DIR/lib/common.sh"
 API_STAGE=""
 PORTAL_STAGE=""
 ENV_STAGE=""
-readonly DEPLOY_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+ACTIVATION_STARTED=0
+ENV_CHANGED=0
+ENV_WAS_PRESENT=0
+UNIT_CHANGED=0
+UNIT_WAS_PRESENT=0
+API_CHANGED=0
+API_WAS_PRESENT=0
+PORTAL_CHANGED=0
+PORTAL_WAS_PRESENT=0
+CADDY_CHANGED=0
+SERVICE_ENABLE_CHANGED=0
+SERVICE_START_ATTEMPTED=0
+SERVICE_WAS_ACTIVE=0
+SERVICE_WAS_ENABLED=""
+readonly DEPLOY_ID="$(date -u +%Y%m%dT%H%M%SZ).$$"
 
 read_env_value() {
     local file="$1"
@@ -128,6 +142,20 @@ cleanup() {
     fi
 }
 
+# EXIT also handles explicit fail() calls and INT/TERM; ERR alone misses these.
+finish_deployment() {
+    local status="$?"
+    trap - EXIT ERR
+    trap '' INT TERM
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$ACTIVATION_STARTED" = "1" ]; then
+        rollback_deployment
+    fi
+    cleanup
+    exit "$status"
+}
+
 preserve_legacy_environment() {
     if [ -f "$SOURCE_ENV" ] && ! sudo test -f "$ENV_FILE"; then
         log "Preserving the existing production environment before checkout"
@@ -186,12 +214,8 @@ run_preflight() {
     getent group "$CADDY_GROUP" > /dev/null ||
         fail "Required group not found: $CADDY_GROUP"
 
-    sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$API_ROOT"
-    sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$API_DIR"
     sudo install -d -o root -g "$DEPLOY_USER" -m 0750 /etc/rinolab
-    sudo install -d -o "$DEPLOY_USER" -g "$CADDY_GROUP" -m 0750 "$PORTAL_ROOT"
 
-    acquire_deploy_lock
     prepare_environment
     prepare_jwks
     validate_oidc_client_registry
@@ -259,21 +283,44 @@ stage_portal_release() {
 }
 
 activate_release() {
-    sudo cp -p "$ENV_FILE" "$ENV_PREVIOUS"
+    if sudo systemctl is-active --quiet "$API_SERVICE"; then
+        SERVICE_WAS_ACTIVE=1
+    fi
+    SERVICE_WAS_ENABLED="$(sudo systemctl is-enabled "$API_SERVICE" 2> /dev/null || true)"
+    ACTIVATION_STARTED=1
+
+    if sudo test -f "$ENV_FILE"; then
+        sudo cp -p "$ENV_FILE" "$ENV_PREVIOUS"
+        ENV_WAS_PRESENT=1
+    fi
+    # install can truncate the destination before failing, so record intent first.
+    ENV_CHANGED=1
     sudo install -o root -g "$DEPLOY_USER" -m 0640 "$ENV_STAGE" "$ENV_FILE"
+    rm -f -- "$ENV_STAGE"
     ENV_STAGE=""
 
+    sudo rm -f -- "$SERVICE_PREVIOUS" "$SERVICE_PREVIOUS_ABSENT"
+    if sudo test -f "$SERVICE_CONFIG"; then
+        sudo cp -p "$SERVICE_CONFIG" "$SERVICE_PREVIOUS"
+        UNIT_WAS_PRESENT=1
+    else
+        sudo touch "$SERVICE_PREVIOUS_ABSENT"
+    fi
+    UNIT_CHANGED=1
     sudo install -o root -g root -m 0644 "$SOURCE_SERVICE" "$SERVICE_CONFIG"
     sudo systemctl daemon-reload
+    SERVICE_ENABLE_CHANGED=1
     sudo systemctl enable "$API_SERVICE"
 
     if [ -e "$API_PREVIOUS" ]; then
         rm -rf -- "$API_PREVIOUS"
     fi
-    if [ -d "$API_DIR" ] && [ -n "$(find "$API_DIR" -mindepth 1 -print -quit)" ]; then
+    if [ -e "$API_DIR" ]; then
+        API_WAS_PRESENT=1
+    fi
+    API_CHANGED=1
+    if [ "$API_WAS_PRESENT" = "1" ]; then
         mv "$API_DIR" "$API_PREVIOUS"
-    elif [ -d "$API_DIR" ]; then
-        rmdir "$API_DIR"
     fi
     mv "$API_STAGE" "$API_DIR"
     API_STAGE=""
@@ -281,33 +328,80 @@ activate_release() {
     if sudo test -e "$PORTAL_PREVIOUS"; then
         sudo rm -rf -- "$PORTAL_PREVIOUS"
     fi
-    sudo mv "$PORTAL_ROOT" "$PORTAL_PREVIOUS"
+    if sudo test -e "$PORTAL_ROOT"; then
+        PORTAL_WAS_PRESENT=1
+    fi
+    PORTAL_CHANGED=1
+    if [ "$PORTAL_WAS_PRESENT" = "1" ]; then
+        sudo mv "$PORTAL_ROOT" "$PORTAL_PREVIOUS"
+    fi
     sudo mv "$PORTAL_STAGE" "$PORTAL_ROOT"
     PORTAL_STAGE=""
 }
 
 rollback_deployment() {
-    log_error "Deployment verification failed; starting rollback"
+    local failed=0
+    local restore_service=0
+    log_error "Deployment failed; restoring changes from this deployment"
 
-    if ! (
-        export RINOLAB_DEPLOY_LOCK_HELD=1
-        export RINOLAB_DEPLOY_ID="$DEPLOY_ID"
-        bash "$ROLLBACK_SCRIPT"
-    ); then
+    # The EXIT handler disables errexit. Check every recovery operation explicitly
+    # and continue restoring independent components after any recovery failure.
+    if [ "$ENV_CHANGED" = "1" ] || [ "$UNIT_CHANGED" = "1" ] || [ "$API_CHANGED" = "1" ]; then
+        restore_service=1
+        if [ "$SERVICE_WAS_ACTIVE" = "1" ] || [ "$SERVICE_START_ATTEMPTED" = "1" ]; then
+            sudo systemctl stop "$API_SERVICE" || failed=1
+        fi
+    fi
+    if [ "$API_CHANGED" = "1" ]; then
+        restore_release_directory "$API_DIR" "$API_PREVIOUS" \
+            "$API_ROOT/api.failed.$DEPLOY_ID" "$API_WAS_PRESENT" || failed=1
+    fi
+    if [ "$PORTAL_CHANGED" = "1" ]; then
+        restore_release_directory "$PORTAL_ROOT" "$PORTAL_PREVIOUS" \
+            "${PORTAL_ROOT}.failed.$DEPLOY_ID" "$PORTAL_WAS_PRESENT" || failed=1
+    fi
+    if [ "$ENV_CHANGED" = "1" ]; then
+        if [ "$ENV_WAS_PRESENT" = "1" ]; then
+            sudo cp -p "$ENV_PREVIOUS" "$ENV_FILE" || failed=1
+        else
+            sudo rm -f -- "$ENV_FILE" || failed=1
+        fi
+    fi
+    if [ "$SERVICE_ENABLE_CHANGED" = "1" ]; then
+        sudo systemctl disable "$API_SERVICE" || failed=1
+    fi
+    if [ "$UNIT_CHANGED" = "1" ]; then
+        if [ "$UNIT_WAS_PRESENT" = "1" ]; then
+            sudo cp -p "$SERVICE_PREVIOUS" "$SERVICE_CONFIG" || failed=1
+        else
+            sudo rm -f -- "$SERVICE_CONFIG" || failed=1
+        fi
+        sudo systemctl daemon-reload || failed=1
+    fi
+    if [ "$SERVICE_ENABLE_CHANGED" = "1" ]; then
+        case "$SERVICE_WAS_ENABLED" in
+            enabled) sudo systemctl enable "$API_SERVICE" || failed=1 ;;
+            enabled-runtime) sudo systemctl enable --runtime "$API_SERVICE" || failed=1 ;;
+        esac
+    fi
+    if [ "$CADDY_CHANGED" = "1" ]; then
+        sudo cp -p "${CADDY_CONFIG}.bak" "$CADDY_CONFIG" || failed=1
+        sudo systemctl reload caddy || failed=1
+    fi
+    if [ "$restore_service" = "1" ] && [ "$SERVICE_WAS_ACTIVE" = "1" ]; then
+        sudo systemctl restart "$API_SERVICE" || failed=1
+    fi
+
+    if [ "$failed" -ne 0 ]; then
         log_error "Rollback did not complete successfully"
     fi
+    return "$failed"
 }
 
 restart_and_verify_api() {
-    if ! sudo systemctl restart "$API_SERVICE"; then
-        rollback_deployment
-        fail "Failed to restart $API_SERVICE"
-    fi
-
-    if ! bash "$HEALTH_CHECK_SCRIPT"; then
-        rollback_deployment
-        fail "API health check failed"
-    fi
+    SERVICE_START_ATTEMPTED=1
+    sudo systemctl restart "$API_SERVICE"
+    bash "$HEALTH_CHECK_SCRIPT"
 }
 
 deploy_caddy_config() {
@@ -317,19 +411,21 @@ deploy_caddy_config() {
         fail "Installed Caddy config not found: $CADDY_CONFIG"
 
     sudo cp -p "$CADDY_CONFIG" "$caddy_backup"
+    CADDY_CHANGED=1
     sudo install -o root -g root -m 0644 "$SOURCE_CADDY" "$CADDY_CONFIG"
-
-    if ! sudo systemctl reload caddy; then
-        log_error "Caddy reload failed; restoring previous config"
-        sudo cp -p "$caddy_backup" "$CADDY_CONFIG"
-        sudo systemctl reload caddy || true
-        fail "Failed to reload Caddy"
-    fi
+    sudo systemctl reload caddy
 }
 
 main() {
-    log "[1/8] Fetch and checkout source"
     assert_deploy_user
+    require_commands flock install sudo
+    sudo -v
+    # Only create the lock's parent before locking; shared source and releases
+    # must not change until this process owns the lock.
+    sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$API_ROOT"
+    acquire_deploy_lock
+
+    log "[1/8] Fetch and checkout source"
     preserve_legacy_environment
     checkout_source
 
@@ -354,10 +450,13 @@ main() {
     log "[8/8] Deploy and reload Caddy"
     deploy_caddy_config
 
+    ACTIVATION_STARTED=0
     log "Deploy complete: $(git -C "$REPO_DIR" rev-parse --short HEAD)"
 }
 
-trap cleanup EXIT
+trap finish_deployment EXIT
 trap 'handle_unexpected_error "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 main "$@"

@@ -28,8 +28,10 @@ export function createAuthRouter(options = {}) {
         next();
     });
 
+    // POST /api/auth/signup: 회원가입 버튼에서 전송한 정보로 새 계정을 생성한다.
     router.post("/signup", async (request, response) => {
         try {
+            // name은 표시 이름, username은 중복을 허용하지 않는 서비스 아이디다.
             const { name, username, email, password } = request.body ?? {};
 
             if (
@@ -39,7 +41,7 @@ export function createAuthRouter(options = {}) {
                 typeof password !== "string"
             ) {
                 return response.status(400).json({
-                    message: "이름, 사용자 이름, 이메일, 비밀번호를 모두 입력해주세요."
+                    message: "이름, 서비스 아이디, 이메일, 비밀번호를 모두 입력해주세요."
                 });
             }
 
@@ -55,7 +57,7 @@ export function createAuthRouter(options = {}) {
 
             if (!isValidUsername(normalizedUsername)) {
                 return response.status(400).json({
-                    message: "사용자 이름은 영문 소문자로 시작하고 영문 소문자, 숫자, _, -만 사용해 3~32자로 입력해주세요."
+                    message: "서비스 아이디는 영문 소문자로 시작하고 영문 소문자, 숫자, _, -만 사용해 3~32자로 입력해주세요."
                 });
             }
 
@@ -103,8 +105,8 @@ export function createAuthRouter(options = {}) {
                 const duplicatedField = Object.keys(error.keyPattern ?? {})[0];
                 return response.status(409).json({
                     message: duplicatedField === "username"
-                        ? "이미 사용 중인 사용자 이름입니다."
-                        : "이미 사용 중인 이메일입니다."
+                        ? "이미 사용 중인 서비스 아이디입니다."
+                        : "이미 가입된 이메일입니다."
                 });
             }
 

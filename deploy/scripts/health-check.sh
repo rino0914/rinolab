@@ -13,12 +13,16 @@ main() {
     log "Checking API health: $HEALTH_URL"
 
     for ((attempt = 1; attempt <= HEALTH_ATTEMPTS; attempt += 1)); do
-        if curl --fail --silent "$HEALTH_URL" > /dev/null; then
+        if curl --fail --silent \
+            --connect-timeout "$HEALTH_CONNECT_TIMEOUT_SECONDS" \
+            --max-time "$HEALTH_TIMEOUT_SECONDS" "$HEALTH_URL" > /dev/null; then
             log "API health check passed on attempt $attempt"
             return 0
         fi
 
-        sleep "$HEALTH_INTERVAL_SECONDS"
+        if [ "$attempt" -lt "$HEALTH_ATTEMPTS" ]; then
+            sleep "$HEALTH_INTERVAL_SECONDS"
+        fi
     done
 
     log_error "API health check failed after $HEALTH_ATTEMPTS attempts"

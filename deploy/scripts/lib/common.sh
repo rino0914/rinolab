@@ -47,11 +47,15 @@ readonly LEGACY_JWKS_FILE="/opt/rinolab/secrets/oidc-jwks.json"
 
 readonly CADDY_CONFIG="/etc/caddy/Caddyfile"
 readonly SERVICE_CONFIG="/etc/systemd/system/rinolab-api.service"
+readonly SERVICE_PREVIOUS="${SERVICE_CONFIG}.previous"
+readonly SERVICE_PREVIOUS_ABSENT="${SERVICE_PREVIOUS}.absent"
 readonly API_SERVICE="rinolab-api"
 
 readonly HEALTH_URL="http://127.0.0.1:3000/api/health"
 readonly HEALTH_ATTEMPTS=10
 readonly HEALTH_INTERVAL_SECONDS=1
+readonly HEALTH_CONNECT_TIMEOUT_SECONDS=2
+readonly HEALTH_TIMEOUT_SECONDS=5
 
 readonly HEALTH_CHECK_SCRIPT="$SCRIPTS_DIR/health-check.sh"
 readonly ROLLBACK_SCRIPT="$SCRIPTS_DIR/rollback.sh"
@@ -92,6 +96,28 @@ acquire_deploy_lock() {
 
     exec 9> "$DEPLOY_LOCK_FILE"
     flock -n 9 || fail "Another Rinolab deployment or rollback is already running"
+}
+
+# A missing backup with had_previous=1 means the original rename never completed.
+# Do not replace the still-current release with an older deployment's backup.
+restore_release_directory() {
+    local current="$1"
+    local previous="$2"
+    local failed="$3"
+    local had_previous="$4"
+
+    if sudo test -e "$previous" || [ "$had_previous" = "0" ]; then
+        if sudo test -e "$current"; then
+            if sudo test -e "$failed"; then
+                log_error "Failed release destination already exists: $failed"
+                return 1
+            fi
+            sudo mv "$current" "$failed" || return "$?"
+        fi
+        if sudo test -e "$previous"; then
+            sudo mv "$previous" "$current" || return "$?"
+        fi
+    fi
 }
 
 handle_unexpected_error() {

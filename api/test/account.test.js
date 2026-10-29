@@ -230,6 +230,6 @@ describe("signup compatibility", () => {
             }
         });
         assert.equal(response.status, 400);
-        assert.match(response.body.message, /사용자 이름/);
+        assert.match(response.body.message, /서비스 아이디/);
     });
 });

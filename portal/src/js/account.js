@@ -1,3 +1,5 @@
+// 회원정보 페이지: 기존 계정을 조회하고, 서비스 아이디가 없는 계정에 아이디를 등록한다.
+// 회원가입 폼의 제출은 portal/src/js/auth.js에서 처리한다.
 import { requestAPI } from "./api.js";
 
 const pageStatus = document.querySelector("[data-page-status]");
@@ -50,6 +52,7 @@ async function loadAccount() {
     }
 }
 
+// '최초 설정' 버튼: 로그인한 계정에 서비스 아이디를 등록한다(PATCH /api/account/me).
 usernameForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!usernameForm.reportValidity()) return;

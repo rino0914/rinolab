@@ -1,29 +1,43 @@
-http://rinolab.org {
-    handle /api/* {
-        reverse_proxy 127.0.0.1:3000 {
-            header_up X-Forwarded-Proto https
-        }
-    }
+{
+	servers {
+		# Trust only the local cloudflared peer; add an exact Docker peer IP if needed.
+		trusted_proxies static 127.0.0.1/32 ::1/128
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP
+	}
+}
 
-    handle {
-        root * /var/www/rinolab
-        file_server
-    }
+http://rinolab.org {
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	handle {
+		root * /var/www/rinolab
+		file_server
+	}
 }
 
 http://auth.rinolab.org {
-    reverse_proxy 127.0.0.1:3000 {
-        header_up X-Forwarded-Proto https
-    }
+	reverse_proxy 127.0.0.1:3000 {
+		header_up X-Forwarded-For {client_ip}
+		header_up X-Forwarded-Proto https
+	}
 }
 
 http://drive.rinolab.org {
-    reverse_proxy 127.0.0.1:8080 {
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-Host {host}
-    }
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-For {client_ip}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
 }
 
 http://photo.rinolab.org {
-    reverse_proxy 127.0.0.1:2283
+	reverse_proxy 127.0.0.1:2283 {
+		header_up X-Forwarded-For {client_ip}
+	}
 }

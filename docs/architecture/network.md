@@ -84,6 +84,33 @@ Cloudflare Edge
 둘 중 하나가 컨테이너에서 실행된다면 컨테이너의 `localhost`는 호스트나 다른 컨테이너를
 가리키지 않으므로 같은 Docker network의 서비스 이름으로 연결해야 한다.
 
+### 원본 클라이언트 IP 전달
+
+Caddy 2.8 이상을 사용한다. Caddyfile은 `cloudflared`가 같은 호스트에서 연결하는 기본
+구성에 맞춰 `127.0.0.1/32`와 `::1/128`만 신뢰하고, `CF-Connecting-IP`에서 원본 IP를
+읽는다. `trusted_proxies_strict`로 IP를 검증·선택한 뒤 모든 upstream의
+`X-Forwarded-For`를 `{client_ip}` 한 개로 덮어쓴다. 따라서 Express는 `trust proxy=1`을
+유지하면서 실제 사용자의 IPv4 또는 IPv6를 로그인 요청 제한에 사용할 수 있다.
+[Caddy의 신뢰 프록시 설정](https://caddyserver.com/docs/caddyfile/options#trusted_proxies)을 참고한다.
+
+사용자가 보낸 `X-Forwarded-For`는 원본 IP 판별에 사용하지 않는다. Cloudflare Edge가
+제공하는 `CF-Connecting-IP`도 허용한 peer에서 온 요청에만 적용한다. 신뢰하지 않는
+peer의 위조 헤더나 누락·잘못된 IP 값은 연결한 peer 주소로 대체된다. 로컬 점검 요청은
+이렇게 처리되지만, 실제 Tunnel 요청에 같은 현상이 발생하면 사용자가 하나의 IP로 묶이므로
+배포 전에 반드시 원본 IP 전달을 확인한다.
+
+Docker를 사용한다면 Caddy에서 관측되는 `cloudflared`의 고정 peer 주소를 먼저 확인하고,
+해당 IPv4 `/32` 또는 IPv6 `/128`만 Caddyfile의 `trusted_proxies static` 목록에 추가한다.
+전체 `private_ranges`, Docker 전체 서브넷, Cloudflare 공개 IP 대역을 임의로 추가하지 않는다.
+Tunnel에서는 Cloudflare Edge가 아니라 `cloudflared`가 Caddy의 직접 연결 상대다.
+같은 peer 주소로 다른 컨테이너의 트래픽도 NAT된다면 그 주소를 신뢰하기 전에 전용 내부
+네트워크로 분리한다. 로컬 프로세스와 지정한 peer는 이 설정의 신뢰 경계에 포함된다.
+
+Cloudflare의 방문자 IP 헤더 제거 기능은 사용하지 않고, 실제 IPv6를 유지하려면 Pseudo IPv4를
+`Overwrite Headers`로 설정하지 않는다. 같은 zone의 Worker는 `CF-Connecting-IP`에 영향을
+줄 수 있으므로 Worker를 추가할 때도 이 경계를 다시 검토한다.
+[Cloudflare의 IP 헤더 동작](https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip)을 참고한다.
+
 ## 6. Rinolab 웹 애플리케이션
 
 프런트엔드는 `/api/auth/...`와 같은 동일 출처 상대 경로로 API를 호출한다. 브라우저에서는

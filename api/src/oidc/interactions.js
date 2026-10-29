@@ -277,24 +277,19 @@ export function createOidcInteractionRouter(provider, config, options = {}) {
         // login = 로그일 필요
         // portal_session 포털 세션 확인 필요 (포털 로그인 세션 = OIDC 인증 사용자 일치 확인)
         console.log("[OIDC] prompt=",prompt.name);
-        if (params.prompt?.split(" ").includes("none")) {
-            console.warn("[OIDC][WARN] prompt=none 감지, login_required 반환");
-        
-            return provider.interactionFinished(request, response, {
-                error: "login_required",
-                error_description: "로그인이 필요합니다."
-            }, { mergeWithLastSubmission: false });
+        if (prompt.name === "login" || prompt.name === "portal_session") {
+            if (params.prompt?.split(" ").includes("none")) {
+                return provider.interactionFinished(request, response, {
+                    error: "login_required",
+                    error_description: "로그인이 필요합니다."
+                }, { mergeWithLastSubmission: false });
+            }
+
+            const handoffUrl = new URL("/api/oidc/handoff", config.accountOrigin);
+            handoffUrl.searchParams.set("uid", uid);
+            return response.redirect(303, handoffUrl.href);
         }
         
-        console.info("[OIDC][INFO] Handoff URL 생성 시작");
-        
-        const handoffUrl = new URL("/api/oidc/handoff", config.accountOrigin);
-        handoffUrl.searchParams.set("uid", uid);
-        
-        console.info("[OIDC][INFO] Handoff URL 생성 완료, 303 Redirect 실행");
-        
-        return response.redirect(303, handoffUrl.href);
-
         // consent = 사용자 동의 필요
         if (prompt.name === "consent") {
             const login = details.lastSubmission?.login;

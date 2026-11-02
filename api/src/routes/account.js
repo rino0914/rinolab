@@ -16,7 +16,6 @@ import { getDB } from "../db.js";
 function publicAccount(account) {
     return {
         username: typeof account.username === "string" ? account.username : null,
-        name: account.name,
         email: account.email
     };
 }
@@ -42,7 +41,7 @@ export function createAccountRouter(options = {}) {
 
     /**
      * GET /api/account/me — 회원정보 페이지에 표시할 로그인 회원의 정보 조회
-     * 세션의 accountId로 활성 계정을 조회하고 서비스 아이디, 이름, 이메일을 반환한다.
+     * 세션의 accountId로 활성 계정을 조회하고 서비스 아이디와 이메일을 반환한다.
      * 응답: 200 조회 성공, 401 활성 계정 없음, 500 서버 오류.
      */
     router.get("/me", async (request, response) => {

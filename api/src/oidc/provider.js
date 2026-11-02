@@ -46,7 +46,7 @@ export function createOidcProvider(config, options = {}) {
         claims: {
             openid: ["sub"],
             email: ["email", "email_verified"],
-            profile: ["name", "preferred_username", "username", "rinolab_role"]
+            profile: ["preferred_username", "username", "rinolab_role"]
         },
         scopes: ["openid", "profile", "email", "offline_access"],
         findAccount,

@@ -1,5 +1,8 @@
-// 회원정보 페이지: 기존 계정을 조회하고, 서비스 아이디가 없는 계정에 아이디를 등록한다.
-// 회원가입 폼의 제출은 portal/src/js/auth.js에서 처리한다.
+/**
+ * @file account.js
+ * @description 회원정보 페이지 : 기존 게정을 조회 및 등록. 폼 재출은  portal/src/js/auth.js에서 처리
+ */
+
 import { requestAPI } from "./api.js";
 
 const pageStatus = document.querySelector("[data-page-status]");
@@ -9,8 +12,11 @@ const usernameReadonly = document.querySelector("[data-username-readonly]");
 const formStatus = document.querySelector("[data-form-status]");
 const driveReturn = document.querySelector("[data-drive-return]");
 
+/**
+ * Account 화면 표시 및 상태 갱신
+ * @param {Object} account - 회원정보
+ */
 function showAccount(account) {
-    document.querySelector("[data-account-name]").textContent = account.name;
     document.querySelector("[data-account-email]").textContent = account.email;
     panels.forEach((panel) => { panel.hidden = false; });
     pageStatus.hidden = true;
@@ -35,9 +41,14 @@ function hasDriveReturn() {
     }
 }
 
+/**
+ * Account 로드
+ */
 async function loadAccount() {
     try {
+        // RestAPI 호출
         const result = await requestAPI("/api/account/me");
+        // Account 표출 및 갱신
         showAccount(result.account);
         if (result.account.username && hasDriveReturn()) driveReturn.hidden = false;
     } catch (error) {
@@ -52,14 +63,20 @@ async function loadAccount() {
     }
 }
 
-// '최초 설정' 버튼: 로그인한 계정에 서비스 아이디를 등록한다(PATCH /api/account/me).
+/** 서비스 아이디 설정 폼을 제출하면, 입력한 아이디를 서버에 저장하고 화면을 갱신하는 이벤트 처리 코드
+ * usernameForm이 존재하면 제출 이벤트를 연결
+ */
 usernameForm?.addEventListener("submit", async (event) => {
+    // 기본 제출 막기
     event.preventDefault();
+    // 입력값 유효성 체크
     if (!usernameForm.reportValidity()) return;
 
     const submit = usernameForm.querySelector("[type='submit']");
+    // 서비스 아이드 추출
     const username = new FormData(usernameForm).get("username");
     try {
+        // 서버 저장 요청
         submit.disabled = true;
         formStatus.hidden = true;
         const result = await requestAPI("/api/account/me", {

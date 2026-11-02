@@ -20,7 +20,7 @@ const passwordHash = bcrypt.hashSync(password, 4);
 const accounts = ["gwnam", "tester09", "legacy"].map((username, index) => ({
     _id: new ObjectId(`64b64cbb2f67d0e8fdd1a00${index + 1}`),
     ...(username === "legacy" ? {} : { username }),
-    email: `${username}@rinolab.org`, name: username,
+    email: `${username}@rinolab.org`,
     status: "ACTIVE", role: "USER", passwordHash
 }));
 const jwks = { keys: [{
@@ -251,7 +251,7 @@ async function signIn(browser, clientId) {
 }
 
 function assertAccount(claims, username) {
-    const account = accounts.find((item) => item.name === username);
+    const account = accounts.find((item) => item.email === `${username}@rinolab.org`);
     assert.equal(claims.sub, account._id.toString());
     assert.equal(claims.username, account.username);
     assert.equal(claims.preferred_username, account.email);

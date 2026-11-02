@@ -130,7 +130,6 @@ describe("OIDC account claims", () => {
             _id: new ObjectId("64b64cbb2f67d0e8fdd1a001"),
             email: "user@rinolab.org",
             username: "user01",
-            name: "홍길동",
             role: "USER"
         };
 
@@ -138,7 +137,6 @@ describe("OIDC account claims", () => {
             sub: "64b64cbb2f67d0e8fdd1a001",
             email: "user@rinolab.org",
             email_verified: false,
-            name: "홍길동",
             preferred_username: "user@rinolab.org",
             username: "user01",
             rinolab_role: "USER"
@@ -167,7 +165,6 @@ describe("OIDC account claims", () => {
         const claims = claimsForAccount({
             _id: new ObjectId("64b64cbb2f67d0e8fdd1a001"),
             email: "legacy@rinolab.org",
-            name: "기존 사용자",
             role: "USER"
         });
         assert.equal(claims.username, undefined);

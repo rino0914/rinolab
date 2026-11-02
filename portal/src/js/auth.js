@@ -89,9 +89,8 @@ forms.forEach((form) => {
         if (authFormType === "signup") {
             // 회원가입 submit → POST /api/auth/signup → api/src/routes/auth.js에서 새 계정 생성.
             apiUrl = "/api/auth/signup";
-            // name은 표시 이름, username은 서비스 아이디. 비밀번호 확인값은 화면 검증에만 사용한다.
+            // username은 서비스 아이디. 비밀번호 확인값은 화면 검증에만 사용한다.
             data = {
-                name: formData.get("name"),
                 username: formData.get("username"),
                 email: formData.get("email"),
                 password: formData.get("password")

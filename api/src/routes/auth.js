@@ -31,29 +31,21 @@ export function createAuthRouter(options = {}) {
     // POST /api/auth/signup: 회원가입 버튼에서 전송한 정보로 새 계정을 생성한다.
     router.post("/signup", async (request, response) => {
         try {
-            // name은 표시 이름, username은 중복을 허용하지 않는 서비스 아이디다.
-            const { name, username, email, password } = request.body ?? {};
+            // username은 중복을 허용하지 않는 서비스 아이디다.
+            const { username, email, password } = request.body ?? {};
 
             if (
-                typeof name !== "string" ||
                 typeof username !== "string" ||
                 typeof email !== "string" ||
                 typeof password !== "string"
             ) {
                 return response.status(400).json({
-                    message: "이름, 서비스 아이디, 이메일, 비밀번호를 모두 입력해주세요."
+                    message: "유저명, 이메일, 비밀번호를 모두 입력해주세요."
                 });
             }
 
-            const normalizedName = name.trim();
             const normalizedUsername = normalizeUsername(username);
             const normalizedEmail = email.trim().toLowerCase();
-
-            if (normalizedName.length < 1 || normalizedName.length > 50) {
-                return response.status(400).json({
-                    message: "이름은 1자 이상 50자 이하로 입력해주세요."
-                });
-            }
 
             if (!isValidUsername(normalizedUsername)) {
                 return response.status(400).json({
@@ -80,7 +72,6 @@ export function createAuthRouter(options = {}) {
                 username: normalizedUsername,
                 email: normalizedEmail,
                 passwordHash,
-                name: normalizedName,
                 role: "USER",
                 status: "ACTIVE",
                 createdAt: now,
@@ -95,7 +86,6 @@ export function createAuthRouter(options = {}) {
                     id: result.insertedId,
                     username: account.username,
                     email: account.email,
-                    name: account.name,
                     role: account.role,
                     status: account.status
                 }
@@ -163,7 +153,6 @@ export function createAuthRouter(options = {}) {
                     id: account._id,
                     username: account.username,
                     email: account.email,
-                    name: account.name,
                     role: account.role,
                     status: account.status
                 }
@@ -200,7 +189,6 @@ export function createAuthRouter(options = {}) {
                     id: account._id,
                     username: account.username,
                     email: account.email,
-                    name: account.name,
                     role: account.role,
                     status: account.status
                 }

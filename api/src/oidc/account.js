@@ -8,7 +8,6 @@ export function claimsForAccount(account) {
         sub: subject,
         email: account.email,
         email_verified: false,
-        name: account.name,
         preferred_username: account.email,
         ...(typeof account.username === "string" ? { username: account.username } : {}),
         rinolab_role: account.role

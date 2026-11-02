@@ -76,7 +76,6 @@ function existingAccount(overrides = {}) {
         _id: new ObjectId("64b64cbb2f67d0e8fdd1a001"),
         email: "user@rinolab.org",
         passwordHash: "sensitive-password-hash",
-        name: "홍길동",
         role: "USER",
         status: "ACTIVE",
         ...overrides
@@ -119,7 +118,6 @@ describe("account profile API", () => {
             success: true,
             account: {
                 username: null,
-                name: "홍길동",
                 email: "user@rinolab.org"
             }
         });
@@ -224,12 +222,11 @@ describe("signup compatibility", () => {
             method: "POST",
             path: "/signup",
             body: {
-                name: "신규 사용자",
                 email: "new@rinolab.org",
                 password: "password123"
             }
         });
         assert.equal(response.status, 400);
-        assert.match(response.body.message, /서비스 아이디/);
+        assert.match(response.body.message, /유저명/);
     });
 });

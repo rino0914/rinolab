@@ -1,6 +1,6 @@
 import { requestAPI } from "./api.js";
 
-const accountName = document.querySelector("[data-account-name]");
+const accountUserName = document.querySelector("[data-account-identity]");
 const logoutButton = document.querySelector("[data-logout]");
 
 /**
@@ -13,8 +13,8 @@ async function loadCurrentAccount() {
         // 횐재 계정 정보 입수
         const result = await requestAPI("/api/auth/me");
 
-        if (accountName instanceof HTMLElement) {
-            accountName.textContent = `${result.account.name} (${result.account.email})`;
+        if (accountUserName instanceof HTMLElement) {
+            accountUserName.textContent = `${result.account.username ?? "아이디 미설정"} (${result.account.email})`;
         }
 
         if (logoutButton instanceof HTMLButtonElement) {
@@ -32,8 +32,8 @@ async function loadCurrentAccount() {
 
         console.error("[ACCOUNT] Failed to load current account:", error);
 
-        if (accountName instanceof HTMLElement) {
-            accountName.textContent = "사용자 정보를 불러오지 못했습니다.";
+        if (accountUserName instanceof HTMLElement) {
+            accountUserName.textContent = "사용자 정보를 불러오지 못했습니다.";
         }
     }
 }
@@ -66,8 +66,8 @@ logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = false;
         logoutButton.textContent = defaultButtonText;
 
-        if (accountName instanceof HTMLElement) {
-            accountName.textContent = error instanceof Error
+        if (accountUserName instanceof HTMLElement) {
+            accountUserName.textContent = error instanceof Error
                 ? error.message
                 : "로그아웃에 실패했습니다.";
         }
